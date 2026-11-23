@@ -14,15 +14,25 @@ public sealed class ServerComponent
     public int StartupDelayMs { get; }
     public Func<Settings, bool> IsEnabled { get; }
 
+    // when set, the process is restarted with backoff if it exits without being stopped, unless it exits with ConfigurationErrorExitCode
+    public bool RestartOnCrash { get; }
+    public int? ConfigurationErrorExitCode { get; }
+
     public ServerStatus Status { get; set; } = ServerStatus.Offline;
 
-    public ServerComponent(string name, string exeName, Func<Settings, Serilog.ILogger, Process?> startAction, int startupDelayMs = 0, Func<Settings, bool>? isEnabled = null)
+    // incremented whenever the component is started or stopped on purpose, a crash of a process from an older generation is ignored
+    internal int Generation;
+    internal int ConsecutiveCrashes;
+
+    public ServerComponent(string name, string exeName, Func<Settings, Serilog.ILogger, Process?> startAction, int startupDelayMs = 0, Func<Settings, bool>? isEnabled = null, bool restartOnCrash = false, int? configurationErrorExitCode = null)
     {
         Name = name;
         ExeName = exeName;
         StartAction = startAction;
         StartupDelayMs = startupDelayMs;
         IsEnabled = isEnabled ?? (_ => true);
+        RestartOnCrash = restartOnCrash;
+        ConfigurationErrorExitCode = configurationErrorExitCode;
     }
 }
 
@@ -59,6 +69,13 @@ public sealed class ServerManager : IDisposable
 
     private readonly Lock _statusLock = new Lock();
 
+    // backoff between automatic restarts of a crashed component, the last delay is repeated until it gives up after MaxConsecutiveCrashes
+    private static readonly int[] RestartBackoffMs = [5_000, 15_000, 30_000, 60_000];
+    private const int MaxConsecutiveCrashes = 6;
+
+    // a component that ran at least this long before crashing starts the backoff over
+    private const int StableRunMs = 3 * 60_000;
+
     private CancellationTokenSource? _operationTokenSource;
 
     public ServerManager()
@@ -70,7 +87,7 @@ public sealed class ServerManager : IDisposable
             new("Buildplate Launcher", BuildplateLauncher.ExeName, BuildplateLauncher.Run, 1500), // 2
             new("API Server", ApiServer.ExeName, ApiServer.Run), // 3
             new("Tappables Generator", TappablesGenerator.ExeName, TappablesGenerator.Run), // 4
-            new("Tile Renderer", TileRenderer.ExeName, TileRenderer.Run, 0, s => s.EnableTileRenderingLabel ?? true), // 5
+            new("Tile Renderer", TileRenderer.ExeName, TileRenderer.Run, 0, s => s.EnableTileRenderingLabel ?? true, restartOnCrash: true, configurationErrorExitCode: TileRenderer.ConfigurationErrorExitCode), // 5
         ];
 
         ComponentShutdownOrder =
@@ -260,7 +277,7 @@ public sealed class ServerManager : IDisposable
                     logger.Debug($"Page-level initialization: Waiting for {comp.Name} to become online");
                 }
 
-                var process = shouldStart ? comp.StartAction(settings, logger) : null;
+                var process = shouldStart ? StartComponent(comp, settings, logger) : null;
                 if (comp.StartupDelayMs > 0)
                 {
                     await Task.Delay(comp.StartupDelayMs, cts.Token);
@@ -338,6 +355,12 @@ public sealed class ServerManager : IDisposable
 
             cancellationToken = InitOperation(cancellationToken);
             Status = ServerStatus.Stopping;
+
+            // stopped on purpose, so the exits must not trigger automatic restarts
+            foreach (var comp in Components)
+            {
+                Interlocked.Increment(ref comp.Generation);
+            }
         }
 
         foreach (var compIndex in ComponentShutdownOrder)
@@ -395,6 +418,12 @@ public sealed class ServerManager : IDisposable
         {
             cancellationToken = InitOperation(cancellationToken);
             Status = ServerStatus.Stopping;
+
+            // stopped on purpose, so the exits must not trigger automatic restarts
+            foreach (var comp in Components)
+            {
+                Interlocked.Increment(ref comp.Generation);
+            }
         }
 
         foreach (var compIndex in ComponentShutdownOrder)
@@ -463,7 +492,7 @@ public sealed class ServerManager : IDisposable
             comp.Status = ServerStatus.Starting;
             OnStatusChanged?.Invoke();
 
-            var process = comp.StartAction(settings, logger);
+            var process = StartComponent(comp, settings, logger);
             if (comp.StartupDelayMs > 0)
             {
                 await Task.Delay(comp.StartupDelayMs, cancellationToken);
@@ -519,6 +548,99 @@ public sealed class ServerManager : IDisposable
         {
             logger.Information("All required programs have (most likely) running successfully");
         }
+    }
+
+    private Process? StartComponent(ServerComponent comp, Settings settings, Serilog.ILogger logger, bool isRestart = false)
+    {
+        int generation = Interlocked.Increment(ref comp.Generation);
+        if (!isRestart)
+        {
+            comp.ConsecutiveCrashes = 0;
+        }
+
+        var process = comp.StartAction(settings, logger);
+        if (comp.RestartOnCrash && process is not null)
+        {
+            _ = SuperviseComponentAsync(comp, process, generation);
+        }
+
+        return process;
+    }
+
+    private async Task SuperviseComponentAsync(ServerComponent comp, Process process, int generation)
+    {
+        var logger = Log.Logger;
+        long startedAt = Environment.TickCount64;
+
+        int exitCode;
+        try
+        {
+            await process.WaitForExitAsync();
+            exitCode = process.ExitCode;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            logger.Warning($"Could not watch {comp.Name} for crashes: {ex.Message}");
+            return;
+        }
+
+        if (Volatile.Read(ref comp.Generation) != generation)
+        {
+            return;
+        }
+
+        comp.Status = ServerStatus.Offline;
+        OnStatusChanged?.Invoke();
+
+        if (exitCode == comp.ConfigurationErrorExitCode)
+        {
+            logger.Error($"{comp.Name} exited because of a configuration error, not restarting it, check the settings and look into logs/{comp.Name}/logxxx for more info");
+            return;
+        }
+
+        int crashes = Environment.TickCount64 - startedAt >= StableRunMs ? 1 : comp.ConsecutiveCrashes + 1;
+        comp.ConsecutiveCrashes = crashes;
+        if (crashes > MaxConsecutiveCrashes)
+        {
+            logger.Error($"{comp.Name} keeps crashing (exit code {exitCode}), giving up on restarting it, look into logs/{comp.Name}/logxxx for more info");
+            return;
+        }
+
+        int delayMs = RestartBackoffMs[int.Min(crashes, RestartBackoffMs.Length) - 1];
+        logger.Warning($"{comp.Name} exited unexpectedly (exit code {exitCode}), restarting it in {delayMs / 1000} seconds (attempt {crashes}/{MaxConsecutiveCrashes})");
+
+        await Task.Delay(delayMs);
+
+        try
+        {
+            lock (_statusLock)
+            {
+                // started or stopped by someone else in the meantime
+                if (Volatile.Read(ref comp.Generation) != generation || Status is ServerStatus.Stopping || StartLocked || !comp.IsEnabled(Settings.Instance)
+                    || ProcessUtils.GetProgramProcesses(comp.ExeName).Any())
+                {
+                    logger.Debug($"Not restarting {comp.Name}, it was started or stopped in the meantime");
+                    return;
+                }
+
+                comp.Status = ServerStatus.Starting;
+
+                // under the lock so that a concurrent stop either prevents the restart or sees (and stops) the new process
+                logger.Information($"Restarting {comp.Name}");
+                StartComponent(comp, Settings.Instance, logger, isRestart: true);
+            }
+
+            OnStatusChanged?.Invoke();
+
+            comp.Status = await WaitForProcessStartAsync(comp.ExeName, CancellationToken.None) ? ServerStatus.Online : ServerStatus.Offline;
+        }
+        catch (Exception ex)
+        {
+            comp.Status = ServerStatus.Offline;
+            logger.Error(ex, $"Failed to restart {comp.Name}");
+        }
+
+        RefreshComponentStatuses(detectRunning: false);
     }
 
     private static async Task StopProgram(string name, Serilog.ILogger logger, CancellationToken cancellationToken)

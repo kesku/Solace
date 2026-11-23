@@ -1,11 +1,17 @@
 ﻿using NetTopologySuite.IO.VectorTiles.Mapbox;
 using Serilog;
 using Solace.TileRenderer.Wkb;
+using System.Net;
 
 namespace Solace.TileRenderer;
 
 internal sealed class MaptilerTileDataSource : ITileDataSource
 {
+    public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
+
+    // delays between the attempts to fetch a tile after a temporary failure, kept short so that the tile still gets to the api server while it waits for it
+    private static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3)];
+
     private readonly string _apiKey;
     private readonly int _maxZoom;
     private readonly HttpClient _httpClient;
@@ -14,7 +20,7 @@ internal sealed class MaptilerTileDataSource : ITileDataSource
     {
         _apiKey = apiKey;
         _maxZoom = maxZoom;
-        _httpClient = httpClient ?? new HttpClient();
+        _httpClient = httpClient ?? new HttpClient() { Timeout = RequestTimeout };
     }
 
     public string GetTagMapJson(StaticData.TileRenderer tileRenderer)
@@ -31,9 +37,8 @@ internal sealed class MaptilerTileDataSource : ITileDataSource
             zoom = _maxZoom;
         }
 
-        var response = await _httpClient.GetAsync($"https://api.maptiler.com/tiles/v3/{zoom}/{tileX}/{tileY}.pbf?key={_apiKey}", cancellationToken);
-        response.EnsureSuccessStatusCode();
-        
+        using var response = await GetTileResponseAsync(zoom, tileX, tileY, cancellationToken);
+
         try
         {
             var reader = new MapboxTileReader();
@@ -107,6 +112,47 @@ internal sealed class MaptilerTileDataSource : ITileDataSource
             }
 
             return layers;
+        }
+    }
+
+    // network errors, timeouts, server errors and rate limiting, anything else (e.g. 401/403 for an invalid api key) won't succeed on a retry
+    public static bool IsTransientFailure(HttpStatusCode statusCode)
+        => statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests || (int)statusCode is < 400 or >= 500;
+
+    // throws if the tile could not be fetched, so the request fails instead of a blank tile being rendered and cached
+    private async Task<HttpResponseMessage> GetTileResponseAsync(int zoom, int tileX, int tileY, CancellationToken cancellationToken)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            string failure;
+            bool transient;
+            try
+            {
+                var response = await _httpClient.GetAsync($"https://api.maptiler.com/tiles/v3/{zoom}/{tileX}/{tileY}.pbf?key={_apiKey}", cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return response;
+                }
+
+                failure = $"response status code: {response.StatusCode}";
+                transient = IsTransientFailure(response.StatusCode);
+                response.Dispose();
+            }
+            catch (Exception ex) when (ex is HttpRequestException || (ex is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            {
+                failure = ex.Message;
+                transient = true;
+            }
+
+            if (!transient || attempt >= RetryDelays.Length)
+            {
+                Log.Warning($"Could not get tile ({tileX}, {tileY}, {zoom}) from maptiler ({failure})");
+                throw new HttpRequestException($"Could not get tile from maptiler ({failure})");
+            }
+
+            var delay = RetryDelays[attempt];
+            Log.Warning($"Could not get tile ({tileX}, {tileY}, {zoom}) from maptiler ({failure}), retrying in {delay.TotalSeconds} seconds");
+            await Task.Delay(delay, cancellationToken);
         }
     }
 

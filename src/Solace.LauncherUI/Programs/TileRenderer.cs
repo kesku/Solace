@@ -10,6 +10,10 @@ internal static class TileRenderer
     public static readonly string ExeName = "TileRenderer" + (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? ".exe" : "");
     public const string DispName = "Tile renderer";
 
+    // the renderer exits with this when restarting it won't help (e.g. an invalid maptiler api key)
+    // keep in sync with Solace.TileRenderer.Program.ConfigurationErrorExitCode
+    public const int ConfigurationErrorExitCode = 2;
+
 #pragma warning disable IDE0060 // Remove unused parameter
     public static bool Check(Settings settings, ILogger logger)
 #pragma warning restore IDE0060 // Remove unused parameter

@@ -12,6 +12,15 @@ namespace Solace.TileRenderer;
 
 internal static class Program
 {
+    // exit code for failures that restarting the renderer can't fix (e.g. an invalid maptiler api key), the launcher doesn't restart it after this
+    // keep in sync with Solace.LauncherUI.Programs.TileRenderer.ConfigurationErrorExitCode
+    private const int ConfigurationErrorExitCode = 2;
+
+    private const int DefaultMaxZoom = 15;
+
+    // delays between the attempts to reach maptiler at startup, after the last one the renderer starts anyway
+    private static readonly TimeSpan[] MaptilerVerifyRetryDelays = [TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10)];
+
     private sealed class Options
     {
         [Option("maptiler_key", HelpText = "Api key for maptiler.com", SetName = "Data source")]
@@ -79,7 +88,7 @@ internal static class Program
         {
             Log.Fatal("No data source provided, either maptiler_key or tileDB must be specified.");
             Log.CloseAndFlush();
-            return 1;
+            return ConfigurationErrorExitCode;
         }
 
         ITileDataSource tileDataSource;
@@ -87,42 +96,17 @@ internal static class Program
         {
             Log.Information("Verifying maptiler api key");
 
-            var httpClient = new HttpClient();
-            HttpResponseMessage response;
-            try
+            var httpClient = new HttpClient() { Timeout = MaptilerTileDataSource.RequestTimeout };
+            int? maxZoom = await VerifyMaptilerKeyAsync(httpClient, options.MapTilerApiKey);
+            if (maxZoom is null)
             {
-                response = await httpClient.GetAsync($"https://api.maptiler.com/tiles/v3/tiles.json?key={options.MapTilerApiKey}");
-            }
-            catch (HttpRequestException ex)
-            {
-                Log.Fatal($"Could not connect to maptiler api: {ex}");
+                httpClient.Dispose();
+
                 Log.CloseAndFlush();
-                return 1;
+                return ConfigurationErrorExitCode;
             }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                Log.Fatal($"Maptiler api key not valid, response status code: {response.StatusCode}");
-                Log.CloseAndFlush();
-                return 1;
-            }
-
-            var json = await JsonSerializer.DeserializeAsync<JsonObject>(response.Content.ReadAsStream());
-
-            int maxZoom;
-            if (json is null || !json.TryGetPropertyValue("maxzoom", out JsonNode? maxZoomNode) || maxZoomNode is not JsonValue maxZoomValue || maxZoomValue.GetValueKind() != JsonValueKind.Number)
-            {
-                Log.Warning("Invalid maptiler response");
-                maxZoom = 15;
-            }
-            else
-            {
-                maxZoom = maxZoomValue.GetValue<int>();
-            }
-
-            tileDataSource = new MaptilerTileDataSource(options.MapTilerApiKey, maxZoom, httpClient);
-
-            Log.Information("Verified maptiler api key");
+            tileDataSource = new MaptilerTileDataSource(options.MapTilerApiKey, maxZoom.Value, httpClient);
         }
         else
         {
@@ -142,7 +126,7 @@ internal static class Program
                 }
 
                 Log.CloseAndFlush();
-                return 1;
+                return ConfigurationErrorExitCode;
             }
 
             Log.Information("Connected to tile database");
@@ -177,7 +161,7 @@ internal static class Program
 
             Log.Fatal($"Failed to load static data: {staticDataException}");
             Log.CloseAndFlush();
-            return 1;
+            return ConfigurationErrorExitCode;
         }
 
         Log.Information("Loaded static data");
@@ -188,5 +172,69 @@ internal static class Program
         }
 
         return 0;
+    }
+
+    // returns the max zoom of the maptiler tiles, or null if maptiler rejected the api key
+    // a temporary failure (network error, timeout, 5xx, 408/429) is retried with backoff and after that the renderer starts anyway,
+    // so a maptiler outage doesn't take it down, the tile requests are retried in the same way once it is running
+    private static async Task<int?> VerifyMaptilerKeyAsync(HttpClient httpClient, string apiKey)
+    {
+        for (int attempt = 0; ; attempt++)
+        {
+            string failure;
+            try
+            {
+                using var response = await httpClient.GetAsync($"https://api.maptiler.com/tiles/v3/tiles.json?key={apiKey}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    Log.Information("Verified maptiler api key");
+                    return await ReadMaxZoomAsync(response);
+                }
+
+                if (!MaptilerTileDataSource.IsTransientFailure(response.StatusCode))
+                {
+                    Log.Fatal($"Maptiler api key not valid, response status code: {response.StatusCode}");
+                    return null;
+                }
+
+                failure = $"response status code: {response.StatusCode}";
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+            {
+                failure = ex.Message;
+            }
+
+            if (attempt >= MaptilerVerifyRetryDelays.Length)
+            {
+                Log.Warning($"Could not reach maptiler api ({failure}), starting anyway, tiles will render once it is reachable again");
+                return DefaultMaxZoom;
+            }
+
+            var delay = MaptilerVerifyRetryDelays[attempt];
+            Log.Warning($"Could not reach maptiler api ({failure}), retrying in {delay.TotalSeconds} seconds");
+            await Task.Delay(delay);
+        }
+    }
+
+    private static async Task<int> ReadMaxZoomAsync(HttpResponseMessage response)
+    {
+        JsonObject? json;
+        try
+        {
+            json = await JsonSerializer.DeserializeAsync<JsonObject>(await response.Content.ReadAsStreamAsync());
+        }
+        catch (JsonException)
+        {
+            json = null;
+        }
+
+        if (json is null || !json.TryGetPropertyValue("maxzoom", out JsonNode? maxZoomNode) || maxZoomNode is not JsonValue maxZoomValue || maxZoomValue.GetValueKind() != JsonValueKind.Number)
+        {
+            Log.Warning("Invalid maptiler response");
+            return DefaultMaxZoom;
+        }
+
+        return maxZoomValue.GetValue<int>();
     }
 }
