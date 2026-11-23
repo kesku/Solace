@@ -109,6 +109,7 @@ internal static class Program
 
         var tappableGenerator = new TappableGenerator(staticData);
         var encounterGenerator = new EncounterGenerator(staticData);
+        var tileClassificationCache = TileClassificationCache.Start(eventBusClient);
         var spawner = new Spawner[1];
         ActiveTiles activeTiles = await ActiveTiles.CreateAsync(eventBusClient, new ActiveTiles.ActiveTileListener(
             async activeTiles =>
@@ -120,7 +121,7 @@ internal static class Program
                 // empty
             }
         ));
-        spawner[0] = await Spawner.CreateAsync(eventBusClient, activeTiles, tappableGenerator, encounterGenerator);
+        spawner[0] = await Spawner.CreateAsync(eventBusClient, activeTiles, tappableGenerator, encounterGenerator, tileClassificationCache);
         await spawner[0].Run();
 
         return 0;

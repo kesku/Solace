@@ -8,10 +8,12 @@ namespace Solace.TappablesGenerator;
 public class Spawner
 {
     private static readonly long SPAWN_INTERVAL = 15 * 1000;
+    private static readonly TimeSpan NEW_TILE_CLASSIFICATION_WAIT = TimeSpan.FromSeconds(1);
 
     private readonly ActiveTiles _activeTiles;
     private readonly TappableGenerator _tappableGenerator;
     private readonly EncounterGenerator _encounterGenerator;
+    private readonly TileClassificationCache _tileClassificationCache;
     private readonly Publisher _publisher;
 
     private readonly int _maxTappableLifetimeIntervals;
@@ -20,12 +22,13 @@ public class Spawner
     private int _spawnCycleIndex;
     private readonly Dictionary<int, int> _lastSpawnCycleForTile = [];
 
-    public Spawner(ActiveTiles activeTiles, TappableGenerator tappableGenerator, EncounterGenerator encounterGenerator, Publisher publisher)
+    public Spawner(ActiveTiles activeTiles, TappableGenerator tappableGenerator, EncounterGenerator encounterGenerator, TileClassificationCache tileClassificationCache, Publisher publisher)
     {
         _activeTiles = activeTiles;
 
         _tappableGenerator = tappableGenerator;
         _encounterGenerator = encounterGenerator;
+        _tileClassificationCache = tileClassificationCache;
         _publisher = publisher;
 
         _maxTappableLifetimeIntervals = (int)(long.Max(TappableGenerator.GetMaxTappableLifetime(), _encounterGenerator.GetMaxEncounterLifetime()) / SPAWN_INTERVAL + 1);
@@ -34,11 +37,11 @@ public class Spawner
         _spawnCycleIndex = _maxTappableLifetimeIntervals;
     }
 
-    public static async Task<Spawner> CreateAsync(EventBusClient eventBusClient, ActiveTiles activeTiles, TappableGenerator tappableGenerator, EncounterGenerator encounterGenerator)
+    public static async Task<Spawner> CreateAsync(EventBusClient eventBusClient, ActiveTiles activeTiles, TappableGenerator tappableGenerator, EncounterGenerator encounterGenerator, TileClassificationCache tileClassificationCache)
     {
         var publisher = await eventBusClient.AddPublisherAsync();
 
-        return new Spawner(activeTiles, tappableGenerator, encounterGenerator, publisher);
+        return new Spawner(activeTiles, tappableGenerator, encounterGenerator, tileClassificationCache, publisher);
     }
 
     public async Task Run()
@@ -88,6 +91,10 @@ public class Spawner
 
     public async Task SpawnTiles(IEnumerable<ActiveTiles.ActiveTile> activeTiles)
     {
+        // give the classifications of the new tiles a moment to load so they can spawn straight away,
+        // tiles that are still loading are spawned by a later spawn cycle
+        await _tileClassificationCache.PrefetchAsync(activeTiles, NEW_TILE_CLASSIFICATION_WAIT);
+
         long spawnCycleTime = _spawnCycleTime;
         int spawnCycleIndex = _spawnCycleIndex;
 
@@ -138,20 +145,26 @@ public class Spawner
 
     private void DoSpawnCyclesForTile(int tileX, int tileY, long spawnCycleTime, int spawnCycleIndex, List<Tappable> tappables, List<Encounter> encounters)
     {
+        if (!_tileClassificationCache.TryGet(tileX, tileY, out TileClassification? tileClassification))
+        {
+            // still fetching the tile, the missed spawn cycles are caught up on once it has been fetched
+            return;
+        }
+
         int lastSpawnCycle = _lastSpawnCycleForTile.GetValueOrDefault((tileX << 16) + tileY);
         int cyclesToSpawn = Math.Min(spawnCycleIndex - lastSpawnCycle, _maxTappableLifetimeIntervals);
         for (int index = 0; index < cyclesToSpawn; index++)
         {
-            SpawnTappablesForTile(tileX, tileY, spawnCycleTime - SPAWN_INTERVAL * (cyclesToSpawn - index - 1), tappables, encounters);
+            SpawnTappablesForTile(tileX, tileY, tileClassification, spawnCycleTime - SPAWN_INTERVAL * (cyclesToSpawn - index - 1), tappables, encounters);
         }
 
         _lastSpawnCycleForTile[(tileX << 16) + tileY] = spawnCycleIndex;
     }
 
-    private void SpawnTappablesForTile(int tileX, int tileY, long currentTime, List<Tappable> tappables, List<Encounter> encounters)
+    private void SpawnTappablesForTile(int tileX, int tileY, TileClassification? tileClassification, long currentTime, List<Tappable> tappables, List<Encounter> encounters)
     {
-        tappables.AddRange(_tappableGenerator.GenerateTappables(tileX, tileY, currentTime));
-        encounters.AddRange(_encounterGenerator.GenerateEncounters(tileX, tileY, currentTime));
+        tappables.AddRange(_tappableGenerator.GenerateTappables(tileX, tileY, tileClassification, currentTime));
+        encounters.AddRange(_encounterGenerator.GenerateEncounters(tileX, tileY, tileClassification, currentTime));
     }
 
     private async Task SendSpawnedTappables(List<Tappable> tappables, List<Encounter> encounters)

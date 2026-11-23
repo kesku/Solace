@@ -325,6 +325,8 @@ public static class Program
 
         var app = builder.Build();
 
+        await TileRequestHandler.StartAsync(eventBus, app.Services.GetRequiredService<IServiceScopeFactory>());
+
         var forwardedHeadersOptions = new ForwardedHeadersOptions
         {
             ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,

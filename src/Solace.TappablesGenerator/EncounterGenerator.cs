@@ -34,7 +34,7 @@ public class EncounterGenerator
     public long GetMaxEncounterLifetime()
         => MAX_DELAY + _maxDuration + 30 * 1000;
 
-    public Encounter[] GenerateEncounters(int tileX, int tileY, long currentTime)
+    public Encounter[] GenerateEncounters(int tileX, int tileY, TileClassification? tileClassification, long currentTime)
     {
         if (_staticData.EncountersConfig.Encounters.Length == 0)
         {
@@ -50,8 +50,11 @@ public class EncounterGenerator
 
             Span<float> tileBounds = stackalloc float[4];
             GetTileBounds(tileX, tileY, tileBounds);
-            float lat = _random.NextSingle(tileBounds[1], tileBounds[0]);
-            float lon = _random.NextSingle(tileBounds[2], tileBounds[3]);
+            if (!SpawnLocation.TryPick(_random, tileX, tileY, tileBounds, tileClassification, out float lat, out float lon, out _))
+            {
+                // no suitable location found (e.g. the tile is mostly water)
+                return [];
+            }
 
             var encounter = new Encounter(
                 Guid.CreateVersion7(),

@@ -5,7 +5,6 @@
 - Launcher buildplate preview - liquid rendering
 - Shop management
 - Encounter generation and AR
-- Use tiles when spawning tappables - don't spawn on water/forbidden areas, spawn more trees in forest?
 - Allow custom java resourcepacks? (tool to turn them into earth(bedrock) resourcepacks)
 - Move logs folder up to the folder with run_launcher.ps1 - cli arg to specify log file location on all programs
 - View old logs in launcher?
