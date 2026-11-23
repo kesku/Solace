@@ -268,7 +268,24 @@ public sealed class BuildplateInstanceRequestHandler
 
         if (encounterBuildplate is null)
         {
-            return null;
+            // encounter configs in static data reference template buildplates (e.g. shop buildplates) directly
+            var templateBuildplate = await _earthDB.TemplateBuildplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(templateBuildplate => templateBuildplate.Id == encounterBuildplateId);
+
+            if (templateBuildplate is null)
+            {
+                return null;
+            }
+
+            byte[]? templateServerData = await _objectStoreClient.GetAsync(templateBuildplate.ServerDataObjectId);
+            if (templateServerData is null)
+            {
+                Log.Error($"Data object {templateBuildplate.ServerDataObjectId} for template buildplate {encounterBuildplateId} could not be loaded from object store");
+                return null;
+            }
+
+            return new BuildplateLoadResponse(Convert.ToBase64String(templateServerData));
         }
 
         byte[]? serverData = await _objectStoreClient.GetAsync(encounterBuildplate.ServerDataObjectId);
