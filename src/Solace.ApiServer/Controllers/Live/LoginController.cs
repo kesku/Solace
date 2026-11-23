@@ -231,7 +231,7 @@ internal sealed partial class LoginController : SolaceControllerBase
 
         byte[] paswordHash = HashPassword(password, passwordSalt);
 
-        var account = await _earthDb.GetOrCreateAccount(userId, query => query);
+        var account = await _earthDb.GetOrCreateAccount(userId, query => query, TokenUtils.AddNewPlayerTokens);
 
         account.Id = userId;
         account.CreatedDate = DateTimeOffset.UtcNow.ToUnixTimeSeconds();

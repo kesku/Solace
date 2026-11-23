@@ -48,13 +48,7 @@ internal sealed class TokensController : SolaceControllerBase
 
         return EarthJson(new Dictionary<string, Dictionary<string, Token>>()
         {
-            {
-                "tokens",
-                tokens.GetTokens()
-                    .Where(token => token.Token is not TokensEF.ChallengeProgressToken and not TokensEF.DailyLoginToken)
-                    .Select(token => new KeyValuePair<string, Token>(token.Id, TokenToApiResponse(token.Token)))
-                    .ToDictionary()
-            }
+            { "tokens", TokensToApiResponse(tokens) }
         }, null);
     }
 
@@ -81,6 +75,12 @@ internal sealed class TokensController : SolaceControllerBase
             return TypedResults.BadRequest();
         }
     }
+
+    internal static Dictionary<string, Token> TokensToApiResponse(TokensEF tokens)
+        => tokens.GetTokens()
+            .Where(token => token.Token is not TokensEF.ChallengeProgressToken and not TokensEF.DailyLoginToken)
+            .Select(token => new KeyValuePair<string, Token>(token.Id, TokenToApiResponse(token.Token)))
+            .ToDictionary();
 
     private static Token TokenToApiResponse(TokensEF.Token token)
     {
@@ -118,12 +118,13 @@ internal sealed class TokensController : SolaceControllerBase
             TokensEF.JournalItemUnlockedToken => Token.LifetimeE.PERSISTENT,
             TokensEF.ChallengeCompletedToken => Token.LifetimeE.PERSISTENT,
             TokensEF.ChallengeProgressedToken => Token.LifetimeE.TRANSIENT, // guessed
+            TokensEF.TutorialToken => Token.LifetimeE.PERSISTENT,
             _ => throw new InvalidDataException($"Unknown Token type '{token?.GetType()?.ToString() ?? null}'"),
         };
 
         return new Token(
             lifetime,
-            Token.Type.FromDb(token.Type),
+            token is TokensEF.TutorialToken tutorial ? Token.Type.FromDb(tutorial.Step) : Token.Type.FromDb(token.Type),
             properties,
             rewards.ToApiResponse()
         );

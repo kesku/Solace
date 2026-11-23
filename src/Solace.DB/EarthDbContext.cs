@@ -300,17 +300,19 @@ public sealed class EarthDbContext : DbContext
         await Tiles.ExecuteDeleteAsync(cancellationToken);
     }
 
-    public async Task EnsureAccountExists(Guid id)
+    // initializeNewAccount only runs when the account gets created, before it is first saved
+    public async Task EnsureAccountExists(Guid id, Action<Account>? initializeNewAccount = null)
     {
         if (await Accounts.AnyAsync(account => account.Id == id))
         {
             return;
         }
 
-        await InitAccountAndAddToDb(id);
+        await InitAccountAndAddToDb(id, initializeNewAccount);
     }
 
-    public async Task<Account> GetOrCreateAccount(Guid id, Func<IQueryable<Account>, IQueryable<Account>> queryFunc)
+    // initializeNewAccount only runs when the account gets created, before it is first saved
+    public async Task<Account> GetOrCreateAccount(Guid id, Func<IQueryable<Account>, IQueryable<Account>> queryFunc, Action<Account>? initializeNewAccount = null)
     {
         var account = await queryFunc(Accounts)
             .FirstOrDefaultAsync(account => account.Id == id);
@@ -320,10 +322,10 @@ public sealed class EarthDbContext : DbContext
             return account;
         }
 
-        return await InitAccountAndAddToDb(id);
+        return await InitAccountAndAddToDb(id, initializeNewAccount);
     }
 
-    private async Task<Account> InitAccountAndAddToDb(Guid id)
+    private async Task<Account> InitAccountAndAddToDb(Guid id, Action<Account>? initializeNewAccount)
     {
         var account = new Account()
         {
@@ -347,6 +349,8 @@ public sealed class EarthDbContext : DbContext
         account.Tokens = new TokensEF() { Id = id, Account = account, };
         account.CraftingSlots = new CraftingSlotsEF() { Id = id, Account = account, };
         account.SmeltingSlots = new SmeltingSlotsEF() { Id = id, Account = account, };
+
+        initializeNewAccount?.Invoke(account);
 
         Accounts.Add(account);
 

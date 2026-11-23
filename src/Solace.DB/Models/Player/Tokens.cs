@@ -52,6 +52,7 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
     [JsonDerivedType(typeof(ChallengeProgressToken), "CHALLENGE_PROGRESS")]
     [JsonDerivedType(typeof(ChallengeCompletedToken), "CHALLENGE_COMPLETED")]
     [JsonDerivedType(typeof(ChallengeProgressedToken), "CHALLENGE_PROGRESSED")]
+    [JsonDerivedType(typeof(TutorialToken), "TUTORIAL")]
     public abstract class Token : IEquatable<Token>, ICloneable<Token>
     {
         [JsonIgnore]
@@ -71,7 +72,8 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
             DAILY_LOGIN,
             CHALLENGE_PROGRESS,
             CHALLENGE_COMPLETED,
-            CHALLENGE_PROGRESSED
+            CHALLENGE_PROGRESSED,
+            TUTORIAL
 #pragma warning restore CA1707 // Identifiers should not contain underscores
         }
 
@@ -296,6 +298,45 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
 
         public override ChallengeProgressedToken DeepCopy()
             => new ChallengeProgressedToken(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold);
+    }
+
+    // one step of the new player tutorial ("oobe.*" on the client)
+    public sealed class TutorialToken : Token
+    {
+        public StepE Step { get; init; }
+
+        public TutorialToken(StepE step)
+            : base(TypeE.TUTORIAL)
+        {
+            Step = step;
+        }
+
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public enum StepE
+        {
+#pragma warning disable CA1707 // Identifiers should not contain underscores
+            PERMISSIONS,
+            MAP_PERMISSIONS,
+            FAKE_MAP,
+            FAKE_TAPPABLE,
+            ADVENTURE_TAPPABLE_REWARD,
+            ADVENTURE_SPAWN_CRYSTAL,
+            ADVENTURE_IN_AR,
+            CHALLENGES,
+            CHALLENGES_VISIBLE,
+            JOURNAL,
+            COMPLETE
+#pragma warning restore CA1707 // Identifiers should not contain underscores
+        }
+
+        public override bool Equals(Token? other)
+            => other is TutorialToken tutorial && Step == tutorial.Step;
+
+        public override int GetHashCode()
+            => HashCode.Combine(Step);
+
+        public override TutorialToken DeepCopy()
+            => new TutorialToken(Step);
     }
 
     public sealed class Legacy : IEquatable<Legacy>

@@ -2,6 +2,7 @@
 using Solace.Common.Utils;
 using Solace.ApiServer.Controllers.EarthApi;
 using Solace.DB;
+using Solace.DB.Models;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
 using Solace.ObjectStore.Client;
@@ -10,6 +11,34 @@ namespace Solace.ApiServer.Utils;
 
 public static class TokenUtils
 {
+    // The tutorial ("oobe.*") steps new accounts start with, in the order the client registers them: permissions screen,
+    // [tappable ftue], fake tappables, crystal activation, adventure, challenges, map location permission, journal, freedom (oobe.complete).
+    // The client only knows about a step through its token, players who finished (or never got) the tutorial have none of them,
+    // so a missing step is treated as done (inferred from that, not verified).
+    // Left out, because Solace can't back them:
+    // - oobe.adventure.* (starter chest, crystal activation, the scripted AR adventure): there are no crystal-activated player adventures
+    //   (adventures/scrolls), and the AR step disables the back button until the script finishes
+    // - oobe.challenges(.visible): waits for a completed tutorial challenge, which nothing would ever produce
+    // - oobe.fake_map / oobe.fake_tappable: the fake map only goes away once the map permission step runs, whose gating isn't known well
+    //   enough to rely on
+    private static readonly TokensEF.TutorialToken.StepE[] NewPlayerTutorialSteps =
+    [
+        TokensEF.TutorialToken.StepE.PERMISSIONS,
+        TokensEF.TutorialToken.StepE.MAP_PERMISSIONS,
+        TokensEF.TutorialToken.StepE.JOURNAL,
+        TokensEF.TutorialToken.StepE.COMPLETE,
+    ];
+
+    // only for accounts that are being created, existing players must not be put through the tutorial again
+    public static void AddNewPlayerTokens(Account account)
+    {
+        TokensEF tokens = account.Tokens!;
+        foreach (TokensEF.TutorialToken.StepE step in NewPlayerTutorialSteps)
+        {
+            tokens.AddToken(Guid.NewGuid().ToString(), new TokensEF.TutorialToken(step));
+        }
+    }
+
     public static async Task<TokensEF.Token?> RedeemTokenAsync(
         EarthDbContext.Results results,
         Guid accountId,

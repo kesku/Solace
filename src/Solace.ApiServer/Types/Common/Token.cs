@@ -103,5 +103,22 @@ public static class TokenTypeExtensions
                 DB.Models.Player.TokensEF.Token.TypeE.CHALLENGE_PROGRESSED => Token.Type.CHALLENGE_PROGRESS,
                 _ => throw new InvalidEnumArgumentException(nameof(type), (int)type, typeof(DB.Models.Player.TokensEF.Token.TypeE)),
             };
+
+        public static Token.Type FromDb(DB.Models.Player.TokensEF.TutorialToken.StepE step)
+            => step switch
+            {
+                DB.Models.Player.TokensEF.TutorialToken.StepE.PERMISSIONS => Token.Type.OOBE_PERMISSIONS,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.MAP_PERMISSIONS => Token.Type.OOBE_MAP_PERMISSIONS,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.FAKE_MAP => Token.Type.OOBE_FAKE_MAP,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.FAKE_TAPPABLE => Token.Type.OOBE_FAKE_TAPPABLE,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.ADVENTURE_TAPPABLE_REWARD => Token.Type.OOBE_ADVENTURE_TAPPABLE_REWARD,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.ADVENTURE_SPAWN_CRYSTAL => Token.Type.OOBE_ADVENTURE_SPAWN_CRYSTAL,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.ADVENTURE_IN_AR => Token.Type.OOBE_ADVENTURE_IN_AR,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.CHALLENGES => Token.Type.OOBE_CHALLENGES,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.CHALLENGES_VISIBLE => Token.Type.OOBE_CHALLENGES_VISIBLE,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.JOURNAL => Token.Type.OOBE_JOURNAL,
+                DB.Models.Player.TokensEF.TutorialToken.StepE.COMPLETE => Token.Type.OOBE_COMPLETE,
+                _ => throw new InvalidEnumArgumentException(nameof(step), (int)step, typeof(DB.Models.Player.TokensEF.TutorialToken.StepE)),
+            };
     }
 }

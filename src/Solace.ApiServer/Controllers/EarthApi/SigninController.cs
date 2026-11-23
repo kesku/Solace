@@ -10,6 +10,8 @@ using Solace.ApiServer.Utils;
 using Solace.ApiServer.Models;
 using Microsoft.AspNetCore.DataProtection;
 using Solace.ApiServer.Authentication;
+using Solace.DB.Utils;
+using Microsoft.EntityFrameworkCore;
 
 namespace Solace.ApiServer.Controllers;
 
@@ -105,11 +107,16 @@ internal sealed partial class SigninController : SolaceControllerBase
 
             userId = IdTranslator.ToGuid(userIdString);
 
-            await _earthDb.EnsureAccountExists(userId);
+            await _earthDb.EnsureAccountExists(userId, TokenUtils.AddNewPlayerTokens);
         }
 
         // TODO: make the time configurable
         string authToken = _protector.Protect(userId.ToString(), TimeSpan.FromHours(1));
+
+        // the official server sent the player's tokens here, the tutorial ones have to be there before the map loads
+        var tokens = await _earthDb.Tokens
+            .AsNoTracking()
+            .FirstOrNewAsync(tokens => tokens.Id == userId, trackNew: false, cancellationToken: cancellationToken);
 
         return EarthJson(new Dictionary<string, object?>()
         {
@@ -119,7 +126,7 @@ internal sealed partial class SigninController : SolaceControllerBase
             ["mixedReality"] = null,
             ["mrToken"] = null,
             ["streams"] = null,
-            ["tokens"] = new object(),
+            ["tokens"] = EarthApi.TokensController.TokensToApiResponse(tokens),
             ["updates"] = new object(),
         });
     }
