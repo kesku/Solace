@@ -14,13 +14,15 @@ namespace Solace.ApiServer.Controllers.EarthApi;
 internal sealed class CdnTileController : SolaceControllerBase
 {
     private readonly EarthDbContext _earthDb;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly EventBusClient _eventBus;
     private readonly ObjectStoreClient _objectStore;
     private readonly TileCacheService _tileCache;
 
-    public CdnTileController(EarthDbContext earthDb, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache)
+    public CdnTileController(EarthDbContext earthDb, IServiceScopeFactory scopeFactory, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache)
     {
         _earthDb = earthDb;
+        _scopeFactory = scopeFactory;
         _eventBus = eventBus;
         _objectStore = objectStore;
         _tileCache = tileCache;
@@ -29,7 +31,7 @@ internal sealed class CdnTileController : SolaceControllerBase
     [HttpGet]
     public async Task<Results<EmptyHttpResult, NotFound>> GetTile(int _, int tilePos1, int tilePos2, CancellationToken cancellationToken) // _ used because we dont care :|
     {
-        if (!await TileUtils.TryWriteTile(tilePos1, tilePos2, Response.Body, _earthDb, _eventBus, _objectStore, _tileCache, cancellationToken))
+        if (!await TileUtils.TryWriteTile(tilePos1, tilePos2, Response.Body, _earthDb, _scopeFactory, _eventBus, _objectStore, _tileCache, cancellationToken))
         {
             return TypedResults.NotFound();
         }

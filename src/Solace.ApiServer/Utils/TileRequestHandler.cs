@@ -42,7 +42,7 @@ internal static class TileRequestHandler
                     var tileCache = scope.ServiceProvider.GetRequiredService<TileCacheService>();
 
                     using var tilePng = new MemoryStream();
-                    if (!await TileUtils.TryWriteTile(getTileRequest.TileX, getTileRequest.TileY, tilePng, earthDb, eventBusClient, objectStore, tileCache, CancellationToken.None))
+                    if (!await TileUtils.TryWriteTile(getTileRequest.TileX, getTileRequest.TileY, tilePng, earthDb, scopeFactory, eventBusClient, objectStore, tileCache, CancellationToken.None))
                     {
                         return null;
                     }

@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Collections.Concurrent;
+using Microsoft.EntityFrameworkCore;
 using Serilog;
 using Solace.Common;
 using Solace.DB;
@@ -9,7 +10,11 @@ namespace Solace.ApiServer.Utils;
 
 internal static class TileUtils
 {
-    public static async Task<bool> TryWriteTile(int tileX, int tileY, Stream dest, EarthDbContext earthDb, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache, CancellationToken cancellationToken)
+    // renders that are in progress in this process, keyed by tile id, so concurrent requests for the same tile
+    // (e.g. the client map and the tappables generator entering a new area) share one render instead of rendering it twice
+    private static readonly ConcurrentDictionary<ulong, Task<byte[]?>> RendersInProgress = new();
+
+    public static async Task<bool> TryWriteTile(int tileX, int tileY, Stream dest, EarthDbContext earthDb, IServiceScopeFactory scopeFactory, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache, CancellationToken cancellationToken)
     {
         ulong dbPos = ToDbPos(tileX, tileY);
 
@@ -28,11 +33,59 @@ internal static class TileUtils
             // the object might have been evicted after the tile was looked up, render the tile again
             Log.Warning($"Object {tile.ObjectStoreId} of tile ({tileX}, {tileY}) is missing, rendering tile again");
 
+            // only delete the row that points to the missing object, not one inserted by a concurrent render
+            string missingObjectId = tile.ObjectStoreId;
             await earthDb.Tiles
-                .Where(tile => tile.Id == dbPos)
+                .Where(tile => tile.Id == dbPos && tile.ObjectStoreId == missingObjectId)
                 .ExecuteDeleteAsync(cancellationToken);
         }
 
+        // the render is shared with other requests, so a cancelled request only stops waiting for it
+        byte[]? tilePng = await GetOrStartRender(tileX, tileY, dbPos, scopeFactory, eventBus, objectStore, tileCache)
+            .WaitAsync(cancellationToken);
+
+        if (tilePng is null)
+        {
+            return false;
+        }
+
+        await dest.WriteAsync(tilePng, cancellationToken);
+
+        return true;
+    }
+
+    private static Task<byte[]?> GetOrStartRender(int tileX, int tileY, ulong dbPos, IServiceScopeFactory scopeFactory, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache)
+    {
+        var render = new TaskCompletionSource<byte[]?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var existingRender = RendersInProgress.GetOrAdd(dbPos, render.Task);
+        if (existingRender != render.Task)
+        {
+            return existingRender;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                render.SetResult(await RenderAndStoreTile(tileX, tileY, dbPos, scopeFactory, eventBus, objectStore, tileCache));
+            }
+            catch (Exception ex)
+            {
+                render.SetException(ex);
+            }
+            finally
+            {
+                RendersInProgress.TryRemove(KeyValuePair.Create(dbPos, render.Task));
+            }
+        });
+
+        return render.Task;
+    }
+
+    // runs detached from the request that started it, so it uses its own database context and is not cancelled with the request
+    private static async Task<byte[]?> RenderAndStoreTile(int tileX, int tileY, ulong dbPos, IServiceScopeFactory scopeFactory, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache)
+    {
         Log.Information("Rendering tile");
         await using var requestSender = await eventBus.AddRequestSenderAsync();
         string? tilePng64 = await requestSender.RequestAsync("tile", "renderTile", Json.Serialize(new RenderTileRequest(tileX, tileY, 16)));
@@ -40,7 +93,7 @@ internal static class TileUtils
         if (tilePng64 is null)
         {
             Log.Warning("Could not get tile (tile renderer did not respond to event bus request)");
-            return false;
+            return null;
         }
 
         byte[] tilePng = Convert.FromBase64String(tilePng64);
@@ -50,21 +103,24 @@ internal static class TileUtils
         if (string.IsNullOrEmpty(tileObjectId))
         {
             Log.Warning("Failed to store tile to object store");
-            return false;
+            return null;
         }
 
-        tile = new DB.Models.Global.Tile()
+        var tile = new DB.Models.Global.Tile()
         {
             Id = dbPos,
             ObjectStoreId = tileObjectId,
             LastAccessed = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
 
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var earthDb = scope.ServiceProvider.GetRequiredService<EarthDbContext>();
+
         earthDb.Tiles.Add(tile);
 
         try
         {
-            await earthDb.SaveChangesAsync(cancellationToken);
+            await earthDb.SaveChangesAsync();
 
             tileCache.RecordAdded();
 
@@ -72,15 +128,13 @@ internal static class TileUtils
         }
         catch (DbUpdateException ex)
         {
-            // e.g. the same tile was rendered by a concurrent request, the tile can still be served
+            // e.g. the same tile was rendered concurrently by a request that did not share this render, the tile can still be served
             Log.Warning($"Failed to store tile ({tileX}, {tileY}) to database: {ex.Message}");
 
             await TileCacheService.TryDeleteObjectAsync(objectStore, tileObjectId);
         }
 
-        await dest.WriteAsync(tilePng, cancellationToken);
-
-        return true;
+        return tilePng;
     }
 
     private static async Task<bool> TryWriteTileFromObject(string tileObjectId, Stream dest, ObjectStoreClient objectStoreClient, CancellationToken cancellationToken)
