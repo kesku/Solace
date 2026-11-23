@@ -5,6 +5,7 @@ This builds a Minecraft Earth 0.33.0 iOS client that plays against a Solace serv
 The official [Minecraft_Earth_Patcher](https://github.com/Earth-Restored/Minecraft_Earth_Patcher) does most of the work. `build.sh` pins that patcher to a known commit and adds what iOS still needs on top:
 
 - **PlayFab:** the binary builds `https://<titleid>.playfabapi.com` itself, which the patcher doesn't redirect. `patch_playfab.py` rewrites it to `http://<titleid>.home.arpa:8080`. The new text is the same length as the old, so the server name and port are fixed.
+- **Sunset modal:** `patch_sunset.py` stops the "Time to Sunset" popup that otherwise appears on every launch.
 - **ATS:** an exception so the app can make plain-HTTP requests to `home.arpa`.
 - **Keychain:** keychain groups for `com.microsoft.xal` and `com.microsoft.adalcache`. Without them, XAL fails sign-in before it sends any request.
 - **Bundle ID and devices:** a custom bundle ID, and extra `UISupportedDevices` entries for newer iPhones.
@@ -33,7 +34,7 @@ xcrun devicectl device install app --device <udid> out/Minecraft_Earth_Solace.ip
 xcrun simctl install <udid> out/minecraftearthtf.app
 ```
 
-Both modes reproduce the builds tested on 2026-11-23. Apart from signature blobs, the output is byte-identical.
+Both modes reproduce the builds tested on 2026-11-23. Apart from signature blobs and the sunset modal patch, the output is byte-identical.
 
 ## Simulator notes
 

@@ -69,6 +69,8 @@ for d in "${DEVICES[@]+"${DEVICES[@]}"}"; do
 done
 # PlayFab -> http://<titleid>.home.arpa:8080 (needs DNS for 20ca2.home.arpa and 11509.home.arpa)
 python3 -I "$HERE/patch_playfab.py" "$A/minecraftearthtf"
+# Skip the "Time to Sunset" modal shown on every launch
+python3 -I "$HERE/patch_sunset.py" "$A/minecraftearthtf"
 # ATS: allow plain HTTP to home.arpa and its subdomains
 $P -c 'Add :NSAppTransportSecurity:NSExceptionDomains:home.arpa dict' \
    -c 'Add :NSAppTransportSecurity:NSExceptionDomains:home.arpa:NSExceptionAllowsInsecureHTTPLoads bool true' \
