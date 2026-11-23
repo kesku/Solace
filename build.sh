@@ -91,6 +91,27 @@ plistlib.dump({
 EOF
 }
 
+# 3. Simulator (arm64 Mac): retag every Mach-O as iOS Simulator
+SDK=iphoneos TARGET=arm64-apple-ios12.0
+if [ "$MODE" = sim ]; then
+  SDK=iphonesimulator TARGET=arm64-apple-ios12.0-simulator
+  XAL_HEADER=$WORK/xal-header.bin
+  dd if="$A/Frameworks/Xal.framework/Xal" of="$XAL_HEADER" bs=1 skip=4096 count=640 2>/dev/null
+  for f in "$A/minecraftearthtf" "$A"/Frameworks/*.framework/*; do
+    [ -f "$f" ] && file "$f" | grep -q Mach-O || continue
+    vtool -set-build-version iossim 12.0 13.0 -replace -output "$f.sim" "$f" && mv "$f.sim" "$f"
+  done
+  # vtool zeroes Xal's header padding, but the patcher keeps its redirect strings there (0x1000-0x1280)
+  dd if="$XAL_HEADER" of="$A/Frameworks/Xal.framework/Xal" bs=1 seek=4096 conv=notrunc 2>/dev/null
+fi
+
+# 4. Native iPhone Duo sizing and the single-scene bridge required by iOS 27.
+# Patch after vtool so it doesn't overwrite the main executable's SDK version.
+python3 -I "$HERE/patch_duo.py" "$A"
+LIFECYCLE="$A/Frameworks/SolaceScene.dylib"
+xcrun --sdk "$SDK" clang -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit \
+  -install_name @rpath/SolaceScene.dylib -o "$LIFECYCLE" "$HERE/SolaceScene.m"
+
 if [ "$MODE" = device ]; then
   TEAM=$(security cms -D -i "$PROFILE" | plutil -extract TeamIdentifier.0 raw -)
   entitlements "$TEAM"
@@ -98,6 +119,7 @@ if [ "$MODE" = device ]; then
   for f in "$A"/Frameworks/*.framework; do
     codesign --force --sign "$IDENTITY" --timestamp=none --generate-entitlement-der "$f" 2>/dev/null
   done
+  codesign --force --sign "$IDENTITY" --timestamp=none "$LIFECYCLE" 2>/dev/null
   codesign --force --sign "$IDENTITY" --timestamp=none --generate-entitlement-der \
     --entitlements "$WORK/Entitlements.plist" "$A" 2>/dev/null
   codesign --verify --deep --strict "$A"
@@ -107,21 +129,13 @@ if [ "$MODE" = device ]; then
   exit 0
 fi
 
-# 3. Simulator (arm64 Mac): retag every Mach-O as iOS Simulator
-XAL_HEADER=$WORK/xal-header.bin
-dd if="$A/Frameworks/Xal.framework/Xal" of="$XAL_HEADER" bs=1 skip=4096 count=640 2>/dev/null
-for f in "$A/minecraftearthtf" "$A"/Frameworks/*.framework/*; do
-  [ -f "$f" ] && file "$f" | grep -q Mach-O || continue
-  vtool -set-build-version iossim 12.0 13.0 -replace -output "$f.sim" "$f" && mv "$f.sim" "$f"
-done
-# vtool zeroes Xal's header padding, but the patcher keeps its redirect strings there (0x1000-0x1280)
-dd if="$XAL_HEADER" of="$A/Frameworks/Xal.framework/Xal" bs=1 seek=4096 conv=notrunc 2>/dev/null
 # The Simulator refuses ad-hoc signatures that carry entitlements (launch error 163), and without the
 # keychain groups XAL gets -34018. Embed them as __TEXT,__entitlements, the way Xcode does.
 entitlements "$TEAM"
 codesign --remove-signature "$A/minecraftearthtf" 2>/dev/null || true
 python3 -I "$HERE/add_entitlements_section.py" "$A/minecraftearthtf" "$WORK/Entitlements.plist"
 for f in "$A"/Frameworks/*.framework; do codesign --force --sign - --timestamp=none "$f" 2>/dev/null; done
+codesign --force --sign - --timestamp=none "$LIFECYCLE" 2>/dev/null
 codesign --force --sign - --timestamp=none "$A" 2>/dev/null
 codesign --verify --deep --strict "$A"
 rm -rf "$OUT/$APP"; mv "$A" "$OUT/$APP"
