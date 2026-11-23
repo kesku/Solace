@@ -6,6 +6,6 @@
     <Nullable>disable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="/private/tmp/claude-501/-Users-kesku--t3-scratch-2026-11-23-https-github-com-earth-restored-10d38d0d/bd169f1d-ef4b-4116-a862-9bb9595d8a75/scratchpad/patcher/src/src/Core/MCEPatcher.Core.csproj" />
+    <ProjectReference Include="../.cache/Minecraft_Earth_Patcher/src/Core/MCEPatcher.Core.csproj" />
   </ItemGroup>
 </Project>
