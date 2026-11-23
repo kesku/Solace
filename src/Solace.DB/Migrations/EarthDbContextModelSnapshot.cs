@@ -191,11 +191,16 @@ namespace Solace.DB.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<long>("LastAccessed")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("ObjectStoreId")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("LastAccessed");
 
                     b.ToTable("Tiles");
                 });

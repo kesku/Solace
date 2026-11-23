@@ -62,7 +62,15 @@ public class DataStore
     public async Task DeleteAsync(string id)
     {
         var file = new FileInfo(Path.Combine(_rootDirectory.FullName, id[..2], id));
-        file.Delete();
+
+        try
+        {
+            file.Delete();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new DataStoreException(ex);
+        }
     }
 
     public class DataStoreException : Exception

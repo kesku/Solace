@@ -28,7 +28,7 @@ internal static class ApiServer
     {
         logger.Debug($"Running {DispName}");
 
-        var arguments = new List<string>(7)
+        var arguments = new List<string>(8)
         {
             $"--port={settings.ApiPort}",
             $"--earth-db={settings.EarthDatabaseConnectionString}",
@@ -36,6 +36,7 @@ internal static class ApiServer
             $"--objectstore=localhost:{settings.ObjectStorePort}",
             $"--logger-url={Program.LoggerAddress}",
             $"--dir={Program.StaticDataDir}",
+            $"--max-cached-tiles={settings.MaxCachedTiles}",
         };
 
         if (settings.OnlyAllowLocalLogin is true)

@@ -126,7 +126,7 @@ public sealed partial class NetworkServer : IDisposable
 
                         break;
                     case "DEL":
-                        bool deleted = await _server.DeleteAsync(arg);
+                        bool deleted = ValidateObjectId(arg) && await _server.DeleteAsync(arg);
                         await WriteMessageAsync(writer, deleted ? "OK" : "ERR");
                         break;
                     default:

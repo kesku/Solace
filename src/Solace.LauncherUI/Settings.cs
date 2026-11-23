@@ -25,6 +25,7 @@ public sealed class Settings
         TileDataSource = TileDataSourceE.MapTiler,
         MapTilerApiKey = null,
         TileDatabaseConnectionString = "Host=localhost;Username=mylogin;Password=mypass;Database=genoa_tile_data",
+        MaxCachedTiles = 0,
         GeneratePreviewOnImport = true,
         SkipFileChecks = false,
         StaticDataPath = "../staticdata",
@@ -49,6 +50,7 @@ public sealed class Settings
     public TileDataSourceE? TileDataSource { get; set; }
     public string? MapTilerApiKey { get; set; }
     public string? TileDatabaseConnectionString { get; set; }
+    public int? MaxCachedTiles { get; set; } // 0 = unlimited
 
     public bool? GeneratePreviewOnImport { get; set; } // TODO: is this really needed?
     public bool? SkipFileChecks { get; set; }
@@ -173,6 +175,12 @@ public sealed class Settings
         {
             Log.Warning($"TileDatabaseConnectionString is invalid, using default: '{Default.TileDatabaseConnectionString}'");
             settings.TileDatabaseConnectionString = Default.TileDatabaseConnectionString;
+        }
+
+        if (settings.MaxCachedTiles is null or < 0)
+        {
+            Log.Warning($"MaxCachedTiles is invalid, using default: '{Default.MaxCachedTiles}'");
+            settings.MaxCachedTiles = Default.MaxCachedTiles;
         }
 
         if (settings.GeneratePreviewOnImport is null)

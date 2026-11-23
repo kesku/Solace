@@ -9,7 +9,7 @@ namespace Solace.ApiServer.Utils;
 
 internal static class TileUtils
 {
-    public static async Task<bool> TryWriteTile(int tileX, int tileY, Stream dest, EarthDbContext earthDb, EventBusClient eventBus, ObjectStoreClient objectStore, CancellationToken cancellationToken)
+    public static async Task<bool> TryWriteTile(int tileX, int tileY, Stream dest, EarthDbContext earthDb, EventBusClient eventBus, ObjectStoreClient objectStore, TileCacheService tileCache, CancellationToken cancellationToken)
     {
         ulong dbPos = ToDbPos(tileX, tileY);
 
@@ -19,7 +19,18 @@ internal static class TileUtils
 
         if (tile is not null)
         {
-            return await TryWriteTileFromObject(tile.ObjectStoreId, dest, objectStore, cancellationToken);
+            if (await TryWriteTileFromObject(tile.ObjectStoreId, dest, objectStore, cancellationToken))
+            {
+                tileCache.RecordAccess(dbPos);
+                return true;
+            }
+
+            // the object might have been evicted after the tile was looked up, render the tile again
+            Log.Warning($"Object {tile.ObjectStoreId} of tile ({tileX}, {tileY}) is missing, rendering tile again");
+
+            await earthDb.Tiles
+                .Where(tile => tile.Id == dbPos)
+                .ExecuteDeleteAsync(cancellationToken);
         }
 
         Log.Information("Rendering tile");
@@ -46,12 +57,26 @@ internal static class TileUtils
         {
             Id = dbPos,
             ObjectStoreId = tileObjectId,
+            LastAccessed = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         };
 
         earthDb.Tiles.Add(tile);
-        await earthDb.SaveChangesAsync(cancellationToken);
 
-        Log.Debug($"Stored tile ({tileX}, {tileY}) to object store under id {tileObjectId}");
+        try
+        {
+            await earthDb.SaveChangesAsync(cancellationToken);
+
+            tileCache.RecordAdded();
+
+            Log.Debug($"Stored tile ({tileX}, {tileY}) to object store under id {tileObjectId}");
+        }
+        catch (DbUpdateException ex)
+        {
+            // e.g. the same tile was rendered by a concurrent request, the tile can still be served
+            Log.Warning($"Failed to store tile ({tileX}, {tileY}) to database: {ex.Message}");
+
+            await TileCacheService.TryDeleteObjectAsync(objectStore, tileObjectId);
+        }
 
         await dest.WriteAsync(tilePng, cancellationToken);
 

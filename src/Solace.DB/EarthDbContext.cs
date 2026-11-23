@@ -171,6 +171,10 @@ public sealed class EarthDbContext : DbContext
             .HasForeignKey(s => s.AccountId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        // tile
+        modelBuilder.Entity<Tile>()
+            .HasIndex(t => t.LastAccessed);
+
         // profile
         modelBuilder.Entity<ProfileEF>()
             .OwnsOne(x => x.Rubies, builder => builder.ToJson());

@@ -49,7 +49,15 @@ public class Server
     public async Task<bool> DeleteAsync(string id)
     {
         Log.Information($"Request to delete object {id}");
-        await _dataStore.DeleteAsync(id);
-        return true;
+        try
+        {
+            await _dataStore.DeleteAsync(id);
+            return true;
+        }
+        catch (DataStore.DataStoreException ex)
+        {
+            Log.Error($"Could not delete object {id}: {ex}");
+            return false;
+        }
     }
 }

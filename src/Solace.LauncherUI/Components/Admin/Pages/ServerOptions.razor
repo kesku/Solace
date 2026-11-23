@@ -114,6 +114,17 @@
                         </div>
                     }
                 </fieldset>
+
+                <div class="mb-3">
+                    <label class="form-label">
+                        Max Cached Tiles
+                        <span class="text-secondary" style="cursor: help;" title="Maximum number of rendered map tiles to keep, the least recently used tiles are deleted when exceeded. 0 = unlimited.">
+                            ?
+                        </span>
+                    </label>
+                    <InputNumber @bind-Value="SettingsModel.MaxCachedTiles" class="form-control" />
+                    <ValidationMessage For="@(() => SettingsModel.MaxCachedTiles)" />
+                </div>
             </div>
 
             @* --- Database Tab --- *@
@@ -187,6 +198,7 @@
         SettingsModel.TileDataSource = source.TileDataSource ?? Settings.TileDataSourceE.MapTiler;
         SettingsModel.MapTilerApiKey = source.MapTilerApiKey;
         SettingsModel.TileDatabaseConnectionString = source.TileDatabaseConnectionString;
+        SettingsModel.MaxCachedTiles = source.MaxCachedTiles;
         SettingsModel.GeneratePreviewOnImport = source.GeneratePreviewOnImport ?? false;
         SettingsModel.SkipFileChecks = source.SkipFileChecks ?? false;
         SettingsModel.StaticDataPath = source.StaticDataPath;
@@ -209,6 +221,7 @@
             TileDataSource = SettingsModel.TileDataSource,
             MapTilerApiKey = SettingsModel.MapTilerApiKey,
             TileDatabaseConnectionString = SettingsModel.TileDatabaseConnectionString,
+            MaxCachedTiles = SettingsModel.MaxCachedTiles,
             GeneratePreviewOnImport = SettingsModel.GeneratePreviewOnImport,
             SkipFileChecks = SettingsModel.SkipFileChecks,
             StaticDataPath = SettingsModel.StaticDataPath,
@@ -260,6 +273,9 @@
 
         public string? MapTilerApiKey { get; set; }
         public string? TileDatabaseConnectionString { get; set; }
+
+        [Required, Range(0, int.MaxValue, ErrorMessage = "Max cached tiles must be 0 (unlimited) or more")]
+        public int? MaxCachedTiles { get; set; }
 
         public bool GeneratePreviewOnImport { get; set; }
         public bool SkipFileChecks { get; set; }

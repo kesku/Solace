@@ -55,6 +55,9 @@ public static class Program
 
         [Option("local-login-only", Default = false, Required = false, HelpText = "Whenther to only allow local accounts, or also allow microsoft accounts")]
         public bool LocalLoginOnly { get; set; }
+
+        [Option("max-cached-tiles", Default = 0, Required = false, HelpText = "Maximum number of map tiles to keep cached, least recently used tiles are evicted when exceeded (0 = unlimited)")]
+        public int MaxCachedTiles { get; set; }
     }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
@@ -284,6 +287,9 @@ public static class Program
         builder.Services.AddMemoryCache();
 
         builder.Services.AddSingleton<CatalogResponseCacheService>();
+
+        builder.Services.AddSingleton(services => new TileCacheService(options.MaxCachedTiles, services.GetRequiredService<IServiceScopeFactory>(), objectStore));
+        builder.Services.AddHostedService(services => services.GetRequiredService<TileCacheService>());
 
         builder.Services.AddControllers()
            .ConfigureApplicationPartManager(manager =>
