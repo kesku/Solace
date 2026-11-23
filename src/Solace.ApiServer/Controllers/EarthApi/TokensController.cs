@@ -68,7 +68,8 @@ internal sealed class TokensController : SolaceControllerBase
 
         if (removedToken is not null)
         {
-            return EarthJson(TokenToApiResponse(removedToken));
+            // the official server answered with the bare token, without the result/updates wrapper
+            return JsonCamelCase(TokenToApiResponse(removedToken));
         }
         else
         {
