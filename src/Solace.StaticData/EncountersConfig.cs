@@ -27,6 +27,11 @@ public sealed class EncountersConfig
 
                     Debug.Assert(encounter is not null);
 
+                    if (encounter.SpawnWeight < 0)
+                    {
+                        throw new StaticDataException($"Encounter config {Path.GetFileName(file)} has a negative spawn weight");
+                    }
+
                     encounters.Add(encounter);
                 }
             }
@@ -43,7 +48,8 @@ public sealed class EncountersConfig
         string Icon,
         EncounterConfig.RarityE Rarity,
         string EncounterBuildplateId,
-        int Duration
+        int Duration,
+        int SpawnWeight = 1 // relative to the other configs, 0 disables the config
     )
     {
         [JsonConverter(typeof(JsonStringEnumConverter))]

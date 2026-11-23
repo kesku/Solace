@@ -14,6 +14,7 @@ public class EncounterGenerator
 
     private readonly StaticData.StaticData _staticData;
     private readonly int _maxDuration;
+    private readonly int _totalSpawnWeight;
 
     private readonly Random _random;
 
@@ -27,6 +28,7 @@ public class EncounterGenerator
         }
 
         _maxDuration = _staticData.EncountersConfig.Encounters.Select(encounterConfig => encounterConfig.Duration).DefaultIfEmpty().Max() * 1000;
+        _totalSpawnWeight = _staticData.EncountersConfig.Encounters.Sum(encounterConfig => encounterConfig.SpawnWeight);
 
         _random = new Random();
     }
@@ -36,7 +38,7 @@ public class EncounterGenerator
 
     public Encounter[] GenerateEncounters(int tileX, int tileY, TileClassification? tileClassification, long currentTime)
     {
-        if (_staticData.EncountersConfig.Encounters.Length == 0)
+        if (_totalSpawnWeight == 0)
         {
             return [];
         }
@@ -46,7 +48,7 @@ public class EncounterGenerator
         {
             long spawnDelay = _random.NextInt64(MIN_DELAY, MAX_DELAY + 1);
 
-            EncountersConfig.EncounterConfig encounterConfig = _staticData.EncountersConfig.Encounters[_random.Next(0, _staticData.EncountersConfig.Encounters.Length)];
+            EncountersConfig.EncounterConfig encounterConfig = PickEncounterConfig();
 
             Span<float> tileBounds = stackalloc float[4];
             GetTileBounds(tileX, tileY, tileBounds);
@@ -71,6 +73,21 @@ public class EncounterGenerator
         }
 
         return [.. encounters];
+    }
+
+    private EncountersConfig.EncounterConfig PickEncounterConfig()
+    {
+        int roll = _random.Next(0, _totalSpawnWeight);
+        foreach (EncountersConfig.EncounterConfig encounterConfig in _staticData.EncountersConfig.Encounters)
+        {
+            roll -= encounterConfig.SpawnWeight;
+            if (roll < 0)
+            {
+                return encounterConfig;
+            }
+        }
+
+        throw new UnreachableException();
     }
 
     private static void GetTileBounds(int tileX, int tileY, Span<float> dest)
