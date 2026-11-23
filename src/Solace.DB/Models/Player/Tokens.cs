@@ -279,8 +279,9 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
         public int PreviousCount { get; init; }
         public int CurrentCount { get; init; }
         public int TotalThreshold { get; init; }
+        public long ExpirationTime { get; init; }
 
-        public ChallengeProgressedToken(string challengeId, string challengeReferenceId, int previousCount, int currentCount, int totalThreshold)
+        public ChallengeProgressedToken(string challengeId, string challengeReferenceId, int previousCount, int currentCount, int totalThreshold, long expirationTime)
             : base(TypeE.CHALLENGE_PROGRESSED)
         {
             ChallengeId = challengeId;
@@ -288,16 +289,17 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
             PreviousCount = previousCount;
             CurrentCount = currentCount;
             TotalThreshold = totalThreshold;
+            ExpirationTime = expirationTime;
         }
 
         public override bool Equals(Token? other)
-            => other is ChallengeProgressedToken token && ChallengeId == token.ChallengeId && ChallengeReferenceId == token.ChallengeReferenceId && PreviousCount == token.PreviousCount && CurrentCount == token.CurrentCount && TotalThreshold == token.TotalThreshold;
+            => other is ChallengeProgressedToken token && ChallengeId == token.ChallengeId && ChallengeReferenceId == token.ChallengeReferenceId && PreviousCount == token.PreviousCount && CurrentCount == token.CurrentCount && TotalThreshold == token.TotalThreshold && ExpirationTime == token.ExpirationTime;
 
         public override int GetHashCode()
-            => HashCode.Combine(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold);
+            => HashCode.Combine(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold, ExpirationTime);
 
         public override ChallengeProgressedToken DeepCopy()
-            => new ChallengeProgressedToken(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold);
+            => new ChallengeProgressedToken(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold, ExpirationTime);
     }
 
     // one step of the new player tutorial ("oobe.*" on the client)

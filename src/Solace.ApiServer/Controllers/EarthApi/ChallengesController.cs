@@ -176,6 +176,7 @@ internal sealed class ChallengesController : ControllerBase
         var progress = ChallengeProgressVersion.FromToken(stored);
         progress.EnsureDate(now);
         RemoveLegacyDailyLoginTokens(tokens, progress, now);
+        TokenUtils.RemoveExpiredTokens(tokens, now);
         tokens.AddToken(ProgressTokenId, progress.ToToken());
         await _earthDb.SaveChangesAsync(cancellationToken);
 
@@ -403,7 +404,7 @@ internal sealed class ChallengesController : ControllerBase
     internal static bool AddChallengeTokens(TokensEF tokens, string playerId, ChallengeProgressVersion before, ChallengeProgressVersion after, long now)
     {
         long expirationTime = new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(now).UtcDateTime.Date.AddDays(1), TimeSpan.Zero).ToUnixTimeMilliseconds();
-        bool added = false;
+        bool added = TokenUtils.RemoveExpiredTokens(tokens, now);
 
         DailyChallengeDefinition[] dailyChallenges = SelectDailyChallenges(playerId, after.DailyDateUtc!);
         foreach (DailyChallengeDefinition challenge in dailyChallenges)
@@ -456,7 +457,7 @@ internal sealed class ChallengesController : ControllerBase
 
         if (currentCount < threshold)
         {
-            tokens.AddToken(Guid.NewGuid().ToString(), new TokensEF.ChallengeProgressedToken(challengeId, referenceId, previousCount, currentCount, threshold));
+            tokens.AddToken(Guid.NewGuid().ToString(), new TokensEF.ChallengeProgressedToken(challengeId, referenceId, previousCount, currentCount, threshold, expirationTime));
         }
         else if (!tokens.Tokens.Values.Any(token => token is TokensEF.ChallengeCompletedToken completed && completed.ChallengeId == challengeId))
         {

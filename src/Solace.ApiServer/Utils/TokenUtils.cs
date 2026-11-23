@@ -55,7 +55,8 @@ public static class TokenUtils
                 .AsTracking()
                 .FirstOrNewAsync(tokens => tokens.Id == accountId, trackNew: false, cancellationToken: cancellationToken);
             if (!tokens.Tokens.TryGetValue(tokenId, out TokensEF.Token? token) ||
-                token is TokensEF.ChallengeProgressToken or TokensEF.DailyLoginToken)
+                token is TokensEF.ChallengeProgressToken or TokensEF.DailyLoginToken ||
+                GetExpirationTime(token) <= currentTime)
             {
                 return null;
             }
@@ -88,6 +89,30 @@ public static class TokenUtils
         results.Tokens = tokens.Version;
 
         return id;
+    }
+
+    // tokens for daily challenges are only valid until the challenges reset
+    public static long? GetExpirationTime(TokensEF.Token token)
+        => token switch
+        {
+            TokensEF.ChallengeCompletedToken challengeCompleted => challengeCompleted.ExpirationTime,
+            TokensEF.ChallengeProgressedToken challengeProgressed => challengeProgressed.ExpirationTime,
+            _ => null,
+        };
+
+    public static bool RemoveExpiredTokens(TokensEF tokens, long currentTime)
+    {
+        bool removed = false;
+        foreach (TokensEF.TokenWithId token in tokens.GetTokens())
+        {
+            if (GetExpirationTime(token.Token) <= currentTime)
+            {
+                tokens.RemoveToken(token.Id);
+                removed = true;
+            }
+        }
+
+        return removed;
     }
 
     // does not handle redeeming the token itself (removing it from the list of tokens belonging to the player)

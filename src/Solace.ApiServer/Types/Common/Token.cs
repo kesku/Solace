@@ -12,6 +12,11 @@ public sealed record Token(
     Rewards Rewards
 )
 {
+    // optional, the client drops tokens that have expired (or whose times don't parse),
+    // it reads this with the same date parser as e.g. the challenges' endTimeUtc
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ExpirationTime { get; init; }
+
     // The client only keeps FNV-1a-32 hashes of the client types it understands (a table of ~40 entries
     // in the 0.33 iOS binary), any other client type is ignored. Every name below has a matching hash in that table,
     // except for redeemtappable, which is only used for the token embedded in the tappable redeem response.

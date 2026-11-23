@@ -126,7 +126,7 @@ internal sealed partial class SigninController : SolaceControllerBase
             ["mixedReality"] = null,
             ["mrToken"] = null,
             ["streams"] = null,
-            ["tokens"] = EarthApi.TokensController.TokensToApiResponse(tokens),
+            ["tokens"] = EarthApi.TokensController.TokensToApiResponse(tokens, HttpContext.GetTimestamp()),
             ["updates"] = new object(),
         });
     }

@@ -48,7 +48,7 @@ internal sealed class TokensController : SolaceControllerBase
 
         return EarthJson(new Dictionary<string, Dictionary<string, Token>>()
         {
-            { "tokens", TokensToApiResponse(tokens) }
+            { "tokens", TokensToApiResponse(tokens, HttpContext.GetTimestamp()) }
         }, null);
     }
 
@@ -76,9 +76,10 @@ internal sealed class TokensController : SolaceControllerBase
         }
     }
 
-    internal static Dictionary<string, Token> TokensToApiResponse(TokensEF tokens)
+    internal static Dictionary<string, Token> TokensToApiResponse(TokensEF tokens, long currentTime)
         => tokens.GetTokens()
             .Where(token => token.Token is not TokensEF.ChallengeProgressToken and not TokensEF.DailyLoginToken)
+            .Where(token => !(TokenUtils.GetExpirationTime(token.Token) <= currentTime))
             .Select(token => new KeyValuePair<string, Token>(token.Id, TokenToApiResponse(token.Token)))
             .ToDictionary();
 
@@ -122,11 +123,16 @@ internal sealed class TokensController : SolaceControllerBase
             _ => throw new InvalidDataException($"Unknown Token type '{token?.GetType()?.ToString() ?? null}'"),
         };
 
+        long? expirationTime = TokenUtils.GetExpirationTime(token);
+
         return new Token(
             lifetime,
             token is TokensEF.TutorialToken tutorial ? Token.Type.FromDb(tutorial.Step) : Token.Type.FromDb(token.Type),
             properties,
             rewards.ToApiResponse()
-        );
+        )
+        {
+            ExpirationTime = expirationTime is not null ? TimeFormatter.FormatTime(expirationTime.Value) : null,
+        };
     }
 }
