@@ -21,12 +21,12 @@ public static class TokenUtils
     // - oobe.challenges(.visible): waits for a completed tutorial challenge, which nothing would ever produce
     // - oobe.fake_map / oobe.fake_tappable: the fake map only goes away once the map permission step runs, whose gating isn't known well
     //   enough to rely on
+    // - oobe.map_permissions / oobe.journal / oobe.complete: tested on the iOS client, the journal walkthrough opens an empty journal
+    //   (the official flow gave an item from the fake tappable first) that stays on "Updating journal" with no way out until a restart,
+    //   and the client never redeems these three, so after a restart they're just ignored
     private static readonly TokensEF.TutorialToken.StepE[] NewPlayerTutorialSteps =
     [
         TokensEF.TutorialToken.StepE.PERMISSIONS,
-        TokensEF.TutorialToken.StepE.MAP_PERMISSIONS,
-        TokensEF.TutorialToken.StepE.JOURNAL,
-        TokensEF.TutorialToken.StepE.COMPLETE,
     ];
 
     // only for accounts that are being created, existing players must not be put through the tutorial again
