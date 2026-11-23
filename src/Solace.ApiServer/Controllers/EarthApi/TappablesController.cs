@@ -220,10 +220,10 @@ internal sealed class TappablesController : SolaceControllerBase
         return EarthJson(new Dictionary<string, object?>()
         {
             { "token", new Token(
+                Token.LifetimeE.PERSISTENT,
                 Token.Type.TAPPABLE,
                 [],
-                rewards.ToApiResponse(),
-                Token.LifetimeE.PERSISTENT
+                rewards.ToApiResponse()
             ) },
             { "updates", null }
         }, new EarthApiResponse.UpdatesResponse(results));

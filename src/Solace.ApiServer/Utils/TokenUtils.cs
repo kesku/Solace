@@ -1,11 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Solace.Common.Utils;
-using Solace.ApiServer.Controllers.EarthApi;
 using Solace.DB;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
 using Solace.ObjectStore.Client;
-using System.Globalization;
 
 namespace Solace.ApiServer.Utils;
 
@@ -27,8 +25,7 @@ public static class TokenUtils
                 .AsTracking()
                 .FirstOrNewAsync(tokens => tokens.Id == accountId, trackNew: false, cancellationToken: cancellationToken);
             if (!tokens.Tokens.TryGetValue(tokenId, out TokensEF.Token? token) ||
-                token is TokensEF.ChallengeProgressToken or TokensEF.DailyLoginToken { Claimed: true } ||
-                token is TokensEF.DailyLoginToken dailyLogin && dailyLogin.Date != UtcDate(currentTime))
+                token is TokensEF.ChallengeProgressToken or TokensEF.DailyLoginToken)
             {
                 return null;
             }
@@ -88,34 +85,8 @@ public static class TokenUtils
                 }
 
                 break;
-            case TokensEF.DailyLoginToken { Claimed: false } dailyLoginToken:
-                {
-                    var tokens = await results.EarthDb.Tokens
-                        .AsTracking()
-                        .FirstOrNewAsync(tokens => tokens.Id == accountId);
-                    TokensEF.ChallengeProgressToken stored = tokens.Tokens.TryGetValue(ChallengesController.ProgressTokenId, out TokensEF.Token? raw) &&
-                        raw is TokensEF.ChallengeProgressToken progressToken
-                        ? progressToken
-                        : new TokensEF.ChallengeProgressToken();
-                    var progress = ChallengeProgressVersion.FromToken(stored);
-                    if (progress.IsDailyLoginClaimed(currentTime))
-                    {
-                        break;
-                    }
-
-                    progress.ClaimDailyLogin(currentTime);
-                    tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
-                    await results.EarthDb.SaveChangesAsync();
-                    results.Tokens = tokens.Version;
-                    await Rewards.FromDBRewardsModel(dailyLoginToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData, objectStore);
-                }
-
-                break;
         }
 
         return token;
     }
-
-    private static string UtcDate(long timestamp)
-        => DateTimeOffset.FromUnixTimeMilliseconds(timestamp).UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

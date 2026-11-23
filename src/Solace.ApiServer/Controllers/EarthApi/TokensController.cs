@@ -50,7 +50,7 @@ internal sealed class TokensController : SolaceControllerBase
             {
                 "tokens",
                 tokens.GetTokens()
-                    .Where(token => token.Token is not TokensEF.ChallengeProgressToken and not TokensEF.DailyLoginToken { Claimed: true })
+                    .Where(token => token.Token is not TokensEF.ChallengeProgressToken and not TokensEF.DailyLoginToken)
                     .Select(token => new KeyValuePair<string, Token>(token.Id, TokenToApiResponse(token.Token)))
                     .ToDictionary()
             }
@@ -94,7 +94,6 @@ internal sealed class TokensController : SolaceControllerBase
         Rewards rewards = token switch
         {
             TokensEF.LevelUpToken levelUp => Rewards.FromDBRewardsModel(levelUp.Rewards).SetLevel(levelUp.Level),
-            TokensEF.DailyLoginToken dailyLogin => Rewards.FromDBRewardsModel(dailyLogin.Rewards),
             _ => new Rewards(),
         };
 
@@ -102,15 +101,14 @@ internal sealed class TokensController : SolaceControllerBase
         {
             TokensEF.LevelUpToken => Token.LifetimeE.TRANSIENT,
             TokensEF.JournalItemUnlockedToken => Token.LifetimeE.PERSISTENT,
-            TokensEF.DailyLoginToken => Token.LifetimeE.TRANSIENT,
             _ => throw new InvalidDataException($"Unknown Token type '{token?.GetType()?.ToString() ?? null}'"),
         };
 
         return new Token(
+            lifetime,
             Token.Type.FromDb(token.Type),
             properties,
-            rewards.ToApiResponse(),
-            lifetime
+            rewards.ToApiResponse()
         );
     }
 }

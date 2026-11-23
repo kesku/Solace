@@ -138,6 +138,8 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
             => new JournalItemUnlockedToken(ItemId);
     }
 
+    // no longer created, the client has no "daily.login" token type
+    // kept so that rows written by older versions still deserialise, they get removed when the challenges are next loaded
     public sealed class DailyLoginToken : Token
     {
         public string Date { get; init; }

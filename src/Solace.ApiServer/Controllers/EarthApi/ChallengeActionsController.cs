@@ -50,19 +50,26 @@ internal sealed class ChallengeActionsController : SolaceControllerBase
         progress.EnsureDate(now);
         if (ChallengesController.TryGetDailyLoginDay(challengeId, out int requestedDay))
         {
-            TokensEF.TokenWithId? token = ChallengesController.EnsureDailyLoginToken(tokens, progress, now);
+            ChallengesController.RemoveLegacyDailyLoginTokens(tokens, progress, now);
             if (requestedDay != progress.GetDailyLoginDay(now) ||
-                progress.IsDailyLoginClaimed(now) ||
-                token?.Token is not TokensEF.DailyLoginToken dailyLoginToken)
+                progress.IsDailyLoginClaimed(now))
             {
                 return TypedResults.BadRequest();
             }
 
-            tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
+            var dailyLoginRewards = RedeemRewards.FromDBRewardsModel(ChallengesController.DailyLoginRewards());
             var results = new EarthDbContext.Results(_earthDb);
-            TokensEF.Token? redeemed = await TokenUtils.RedeemTokenAsync(
-                results, accountId, token.Id, now, _staticData, _objectStore, cancellationToken);
-            if (redeemed is null)
+            try
+            {
+                await using var transaction = await _earthDb.Database.BeginTransactionAsync(cancellationToken);
+                progress.ClaimDailyLogin(now);
+                tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
+                await _earthDb.SaveChangesAsync(cancellationToken);
+                results.Tokens = tokens.Version;
+                await dailyLoginRewards.ToRedeemQueryAsync(results, accountId, now, _staticData, _objectStore);
+                await transaction.CommitAsync(cancellationToken);
+            }
+            catch (DbUpdateConcurrencyException)
             {
                 return TypedResults.BadRequest();
             }
@@ -73,7 +80,7 @@ internal sealed class ChallengeActionsController : SolaceControllerBase
             {
                 ["challengeId"] = challengeId,
                 ["state"] = "Claimed",
-                ["rewards"] = RedeemRewards.FromDBRewardsModel(dailyLoginToken.Rewards).ToApiResponse(),
+                ["rewards"] = dailyLoginRewards.ToApiResponse(),
                 ["updates"] = new Dictionary<string, object>(),
             }, dailyUpdates);
         }

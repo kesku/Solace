@@ -175,7 +175,7 @@ internal sealed class ChallengesController : ControllerBase
 
         var progress = ChallengeProgressVersion.FromToken(stored);
         progress.EnsureDate(now);
-        EnsureDailyLoginToken(tokens, progress, now);
+        RemoveLegacyDailyLoginTokens(tokens, progress, now);
         tokens.AddToken(ProgressTokenId, progress.ToToken());
         await _earthDb.SaveChangesAsync(cancellationToken);
 
@@ -345,11 +345,12 @@ internal sealed class ChallengesController : ControllerBase
         }
     }
 
-    internal static TokensEF.TokenWithId? EnsureDailyLoginToken(TokensEF tokens, ChallengeProgressVersion progress, long now)
+    // older versions tracked sign in claims with "daily.login" tokens, which the client doesn't know about,
+    // carry their claimed dates over into the progress and drop them
+    internal static void RemoveLegacyDailyLoginTokens(TokensEF tokens, ChallengeProgressVersion progress, long now)
     {
         var todayDate = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(now).UtcDateTime);
         string today = todayDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        TokensEF.TokenWithId? current = null;
         TokensEF.TokenWithId[] dailyTokens = [.. tokens.GetTokens().Where(token => token.Token is TokensEF.DailyLoginToken)];
 
         if (progress.LastDailyLoginDateUtc is null)
@@ -394,37 +395,10 @@ internal sealed class ChallengesController : ControllerBase
             if (dailyLogin.Date == today && dailyLogin.Claimed)
             {
                 progress.ClaimDailyLogin(now);
-                tokens.RemoveToken(token.Id);
             }
-            else if (dailyLogin.Date == today && current is null)
-            {
-                current = token;
-            }
-            else
-            {
-                tokens.RemoveToken(token.Id);
-            }
+
+            tokens.RemoveToken(token.Id);
         }
-
-        if (progress.IsDailyLoginClaimed(now))
-        {
-            if (current is not null)
-            {
-                tokens.RemoveToken(current.Id);
-            }
-
-            return null;
-        }
-
-        if (current is not null)
-        {
-            return current;
-        }
-
-        string tokenId = Guid.NewGuid().ToString();
-        var dailyLoginToken = new TokensEF.DailyLoginToken(today, DailyLoginRewards());
-        tokens.AddToken(tokenId, dailyLoginToken);
-        return new TokensEF.TokenWithId(tokenId, dailyLoginToken);
     }
 
     internal static bool TryGetDailyLoginDay(string challengeId, out int day)
