@@ -9,7 +9,7 @@ The official [Minecraft_Earth_Patcher](https://github.com/Earth-Restored/Minecra
 - **ATS:** an exception so the app can make plain-HTTP requests to `home.arpa`.
 - **Keychain:** keychain groups for `com.microsoft.xal` and `com.microsoft.adalcache`. Without them, XAL fails sign-in before it sends any request.
 - **Bundle ID and devices:** a custom bundle ID, and extra `UISupportedDevices` entries for newer iPhones.
-- **iPhone Duo:** native display sizing and live fold and unfold support.
+- **iPhone Duo:** native display sizing and live fold and unfold support. Pass `--full-inner` to fill the inner display with phone-sized controls.
 - **Simulator:** a build for the iOS Simulator on Apple-silicon Macs (see below).
 
 ## DNS

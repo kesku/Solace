@@ -7,6 +7,7 @@
 # Options:
 #   --bundle-id ID      default me.kesku.minecraftearth (must match the profile for device builds)
 #   --device MODEL      extra UISupportedDevices entry, e.g. iPhone19,4 (repeatable)
+#   --full-inner       fill the unfolded iPhone Duo display with phone-sized controls
 #   --team TEAMID       keychain group prefix for sim builds (device builds read it from the profile)
 #
 # Needs: macOS with Xcode command line tools, python3, git, and the .NET 10 SDK (`dotnet`, or set DOTNET).
@@ -19,18 +20,19 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 P=/usr/libexec/PlistBuddy
 DOTNET=${DOTNET:-dotnet}
 
-usage() { sed -n 2,13p "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n 2,14p "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 [ $# -ge 3 ] || usage
 MODE=$1 IPA=$(cd "$(dirname "$2")" && pwd)/$(basename "$2") OUT=$3; shift 3
 case $MODE in device|sim) ;; *) usage ;; esac
 
-BUNDLE_ID=me.kesku.minecraftearth IDENTITY= PROFILE= TEAM= DEVICES=()
+BUNDLE_ID=me.kesku.minecraftearth IDENTITY= PROFILE= TEAM= DEVICES=() DUO_ARGS=()
 while [ $# -gt 0 ]; do
   case $1 in
     --identity) IDENTITY=$2; shift 2 ;;
     --profile) PROFILE=$2; shift 2 ;;
     --bundle-id) BUNDLE_ID=$2; shift 2 ;;
     --team) TEAM=$2; shift 2 ;;
+    --full-inner) DUO_ARGS=(--full-inner); shift ;;
     --device) DEVICES+=("$2"); shift 2 ;;
     *) usage ;;
   esac
@@ -107,7 +109,10 @@ fi
 
 # 4. Native iPhone Duo sizing and the single-scene bridge required by iOS 27.
 # Patch after vtool so it doesn't overwrite the main executable's SDK version.
-python3 -I "$HERE/patch_duo.py" "$A"
+python3 -I "$HERE/patch_duo.py" "$A" "${DUO_ARGS[@]+"${DUO_ARGS[@]}"}"
+if [ "${DUO_ARGS[0]:-}" = --full-inner ]; then
+  python3 -I "$HERE/patch_duo_full_inner.py" "$A"
+fi
 LIFECYCLE="$A/Frameworks/SolaceScene.dylib"
 xcrun --sdk "$SDK" clang -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit \
   -install_name @rpath/SolaceScene.dylib -o "$LIFECYCLE" "$HERE/SolaceScene.m"
