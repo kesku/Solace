@@ -69,7 +69,7 @@ def patch_executable(path):
     path.write_bytes(data)
 
 
-def main(app):
+def main(app, full_inner=False):
     path = app / "Info.plist"
     info = plistlib.loads(path.read_bytes())
     manifest = {
@@ -84,13 +84,16 @@ def main(app):
     assert info.get("NSMainNibFile") == "MainWindow", "unexpected main nib"
     assert info.get("UIApplicationSceneManifest", manifest) == manifest, "unexpected scene manifest"
     info["UIApplicationSceneManifest"] = manifest
-    # iOS 27 otherwise gives this portrait-only app a narrow compatibility scene
-    # on the inner display. Keep the original full-screen policy on older iPadOS.
-    info["UIRequiresFullScreenIgnoredStartingWithVersion"] = "27"
+    # Without this, iOS 27 keeps the inner display at a portrait-width column. Filling it
+    # works, but the game's HUD and menus scale to the width and come out oversized.
+    if full_inner:
+        info["UIRequiresFullScreenIgnoredStartingWithVersion"] = "27"
+    else:
+        info.pop("UIRequiresFullScreenIgnoredStartingWithVersion", None)
 
     patch_executable(app / "minecraftearthtf")
     path.write_bytes(plistlib.dumps(info, fmt=plistlib.FMT_BINARY))
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    main(Path(sys.argv[1]), "--full-inner" in sys.argv[2:])
