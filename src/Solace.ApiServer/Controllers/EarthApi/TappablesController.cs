@@ -208,7 +208,10 @@ internal sealed class TappablesController : SolaceControllerBase
         }
 
         previousChallengeProgress.EnsureDate(requestStartedOn);
-        bool challengeTokensAdded = ChallengesController.AddChallengeTokens(tokens, accountId.ToString(), previousChallengeProgress, challengeProgress, requestStartedOn);
+        // Not announced in this response's updates: the official server only flagged profile/inventory/journal here,
+        // and telling the client about new tokens makes it redeem the challenge.progress token straight away,
+        // which cuts off the tappable's reward reveal. The client picks the tokens up on its next poll instead.
+        ChallengesController.AddChallengeTokens(tokens, accountId.ToString(), previousChallengeProgress, challengeProgress, requestStartedOn);
         tokens.AddToken(ChallengesController.ProgressTokenId, challengeProgress.ToToken());
 
         redeemedTappables.Add(tappable.Id, tappable.SpawnTime + tappable.ValidFor);
@@ -216,11 +219,6 @@ internal sealed class TappablesController : SolaceControllerBase
 
         await _earthDB.SaveChangesAsync(cancellationToken);
         var results = new EarthDbContext.Results(_earthDB);
-        if (challengeTokensAdded)
-        {
-            results.Tokens = tokens.Version;
-            results.Challenges = (int)(requestStartedOn / 1000);
-        }
 
         await ActivityLogUtils.AddEntryAsync(results, accountId, new ActivityLogEF.TappableEntry(requestStartedOn, rewards.ToDBRewardsModel()));
         await rewards.ToRedeemQueryAsync(results, accountId, requestStartedOn, _staticData);
