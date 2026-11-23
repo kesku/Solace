@@ -39,9 +39,10 @@ internal static class TileRequestHandler
                     await using var scope = scopeFactory.CreateAsyncScope();
                     var earthDb = scope.ServiceProvider.GetRequiredService<EarthDbContext>();
                     var objectStore = scope.ServiceProvider.GetRequiredService<ObjectStoreClient>();
+                    var tileCache = scope.ServiceProvider.GetRequiredService<TileCacheService>();
 
                     using var tilePng = new MemoryStream();
-                    if (!await TileUtils.TryWriteTile(getTileRequest.TileX, getTileRequest.TileY, tilePng, earthDb, eventBusClient, objectStore, CancellationToken.None))
+                    if (!await TileUtils.TryWriteTile(getTileRequest.TileX, getTileRequest.TileY, tilePng, earthDb, eventBusClient, objectStore, tileCache, CancellationToken.None))
                     {
                         return null;
                     }
