@@ -12,6 +12,7 @@ using Solace.DB.Models.Player;
 using Rewards = Solace.ApiServer.Utils.Rewards;
 using Microsoft.EntityFrameworkCore;
 using Solace.DB.Utils;
+using Solace.ObjectStore.Client;
 using System.Diagnostics;
 
 namespace Solace.ApiServer.Controllers.EarthApi;
@@ -23,11 +24,13 @@ internal sealed class TokensController : SolaceControllerBase
 {
     private readonly EarthDbContext _earthDb;
     private readonly StaticData.StaticData _staticData;
+    private readonly ObjectStoreClient _objectStore;
 
-    public TokensController(EarthDbContext earthDb, StaticData.StaticData staticData)
+    public TokensController(EarthDbContext earthDb, StaticData.StaticData staticData, ObjectStoreClient objectStore)
     {
         _earthDb = earthDb;
         _staticData = staticData;
+        _objectStore = objectStore;
     }
 
     [HttpGet]
@@ -66,7 +69,7 @@ internal sealed class TokensController : SolaceControllerBase
         long requestStartedOn = HttpContext.GetTimestamp();
 
         var removedToken = await TokenUtils.RedeemTokenAsync(
-            new EarthDbContext.Results(_earthDb), accountId, tokenId, requestStartedOn, _staticData, cancellationToken);
+            new EarthDbContext.Results(_earthDb), accountId, tokenId, requestStartedOn, _staticData, _objectStore, cancellationToken);
 
         if (removedToken is not null)
         {

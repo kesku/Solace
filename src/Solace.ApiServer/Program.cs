@@ -260,9 +260,49 @@ public static class Program
                     return 1;
                 }
             }
-        }
 
-        Log.Information("Imported shop buidplates");
+            Log.Information("Imported shop buidplates");
+
+            Log.Information("Importing level buildplates");
+
+            foreach (var buildplate in staticData.Buildplates.LevelBuildplates)
+            {
+                if (earthDbContext.TemplateBuildplates.Any(bp => bp.Id == buildplate.Id))
+                {
+                    Log.Debug($"Level buildplate {buildplate.Id} already exists");
+                    continue;
+                }
+
+                try
+                {
+                    Log.Information($"Importing level buildplate {buildplate.Id}");
+
+                    // levels/<n>.json are loaded starting from 2.json
+                    string name = "Level buildplate";
+                    for (int levelIndex = 0; levelIndex < staticData.Levels.Levels.Length; levelIndex++)
+                    {
+                        if (staticData.Levels.Levels[levelIndex].Buildplates.Contains(buildplate.Id.ToString(), StringComparer.OrdinalIgnoreCase))
+                        {
+                            name = $"Level {levelIndex + 2}";
+                            break;
+                        }
+                    }
+
+                    using (var buildplateData = buildplate.OpenRead())
+                    {
+                        await importer.ImportTemplateAsync(buildplate.Id, $"[LEVEL] {name}", buildplateData);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Fatal($"Failed to import level buildplate {buildplate.Id}: {ex}");
+                    Log.CloseAndFlush();
+                    return 1;
+                }
+            }
+
+            Log.Information("Imported level buildplates");
+        }
 
         var tappablesManager = await TappablesManager.CreateAsync(eventBus);
         var buildplateInstancesManager = await BuildplateInstancesManager.CreateAsync(eventBus);

@@ -4,6 +4,7 @@ using Solace.ApiServer.Controllers.EarthApi;
 using Solace.DB;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
+using Solace.ObjectStore.Client;
 using System.Globalization;
 
 namespace Solace.ApiServer.Utils;
@@ -16,6 +17,7 @@ public static class TokenUtils
         string tokenId,
         long currentTime,
         StaticData.StaticData staticData,
+        ObjectStoreClient objectStore,
         CancellationToken cancellationToken = default)
     {
         try
@@ -35,7 +37,7 @@ public static class TokenUtils
 
             await results.EarthDb.SaveChangesAsync(cancellationToken);
             results.Tokens = tokens.Version;
-            await DoActionsOnRedeemedTokenAsync(results, removedToken, accountId, currentTime, staticData);
+            await DoActionsOnRedeemedTokenAsync(results, removedToken, accountId, currentTime, staticData, objectStore);
             await transaction.CommitAsync(cancellationToken);
             return removedToken;
         }
@@ -62,7 +64,7 @@ public static class TokenUtils
     }
 
     // does not handle redeeming the token itself (removing it from the list of tokens belonging to the player)
-    public static async Task<TokensEF.Token> DoActionsOnRedeemedTokenAsync(EarthDbContext.Results results, TokensEF.Token token, Guid accountId, long currentTime, StaticData.StaticData staticData)
+    public static async Task<TokensEF.Token> DoActionsOnRedeemedTokenAsync(EarthDbContext.Results results, TokensEF.Token token, Guid accountId, long currentTime, StaticData.StaticData staticData, ObjectStoreClient objectStore)
     {
         switch (token)
         {
@@ -70,7 +72,7 @@ public static class TokenUtils
                 {
                     await ActivityLogUtils.AddEntryAsync(results, accountId, new ActivityLogEF.LevelUpEntry(currentTime, levelUpToken.Level));
 
-                    await Rewards.FromDBRewardsModel(levelUpToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData);
+                    await Rewards.FromDBRewardsModel(levelUpToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData, objectStore);
                 }
 
                 break;
@@ -105,7 +107,7 @@ public static class TokenUtils
                     tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
                     await results.EarthDb.SaveChangesAsync();
                     results.Tokens = tokens.Version;
-                    await Rewards.FromDBRewardsModel(dailyLoginToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData);
+                    await Rewards.FromDBRewardsModel(dailyLoginToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData, objectStore);
                 }
 
                 break;

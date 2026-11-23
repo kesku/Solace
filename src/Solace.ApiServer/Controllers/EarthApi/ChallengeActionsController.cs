@@ -8,6 +8,7 @@ using Solace.Common.Utils;
 using Solace.DB;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
+using Solace.ObjectStore.Client;
 using RedeemRewards = Solace.ApiServer.Utils.Rewards;
 
 namespace Solace.ApiServer.Controllers.EarthApi;
@@ -19,11 +20,13 @@ internal sealed class ChallengeActionsController : SolaceControllerBase
 {
     private readonly EarthDbContext _earthDb;
     private readonly StaticData.StaticData _staticData;
+    private readonly ObjectStoreClient _objectStore;
 
-    public ChallengeActionsController(EarthDbContext earthDb, StaticData.StaticData staticData)
+    public ChallengeActionsController(EarthDbContext earthDb, StaticData.StaticData staticData, ObjectStoreClient objectStore)
     {
         _earthDb = earthDb;
         _staticData = staticData;
+        _objectStore = objectStore;
     }
 
     [HttpPost("{challengeId}/modifyState")]
@@ -58,7 +61,7 @@ internal sealed class ChallengeActionsController : SolaceControllerBase
             tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
             var results = new EarthDbContext.Results(_earthDb);
             TokensEF.Token? redeemed = await TokenUtils.RedeemTokenAsync(
-                results, accountId, token.Id, now, _staticData, cancellationToken);
+                results, accountId, token.Id, now, _staticData, _objectStore, cancellationToken);
             if (redeemed is null)
             {
                 return TypedResults.BadRequest();

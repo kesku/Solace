@@ -1,11 +1,13 @@
 ﻿using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using Solace.BuildplateImporter;
 using Solace.Common.Utils;
 using Solace.DB;
 using Solace.DB.Models.Common;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
+using Solace.ObjectStore.Client;
 using Solace.StaticData;
 
 namespace Solace.ApiServer.Utils;
@@ -61,7 +63,7 @@ public sealed class Rewards
         return this;
     }
 
-    public async Task ToRedeemQueryAsync(EarthDbContext.Results results, Guid accountId, long currentTime, StaticData.StaticData staticData)
+    public async Task ToRedeemQueryAsync(EarthDbContext.Results results, Guid accountId, long currentTime, StaticData.StaticData staticData, ObjectStoreClient? objectStore = null)
     {
         ProfileEF? profile = null;
         if (_rubies > 0 || _experiencePoints > 0)
@@ -160,7 +162,33 @@ public sealed class Rewards
 
         if (_buildplates.Count > 0)
         {
-            // TODO
+            if (objectStore is null)
+            {
+                Log.Error($"Could not add reward buildplates {string.Join(", ", _buildplates)} to player {accountId}: no object store client");
+            }
+            else
+            {
+                await using var importer = new Importer(results.EarthDb, null, objectStore, Log.Logger)
+                {
+                    OwnsEarthDb = false,
+                    OwnsEventBusClient = false,
+                    OwnsObjectStoreClient = false,
+                };
+
+                foreach (string id in _buildplates)
+                {
+                    if (!Guid.TryParse(id, out Guid templateId))
+                    {
+                        Log.Error($"Reward buildplate '{id}' is not a valid template id");
+                        continue;
+                    }
+
+                    if (await importer.AddBuidplateToPlayer(templateId, accountId) is null)
+                    {
+                        Log.Error($"Failed to add reward buildplate {templateId} to player {accountId}");
+                    }
+                }
+            }
         }
 
         if (_challenges.Count > 0)

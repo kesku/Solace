@@ -7,6 +7,7 @@ using Solace.ApiServer.Utils;
 using Solace.DB;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
+using Solace.ObjectStore.Client;
 using Microsoft.EntityFrameworkCore;
 using Solace.StaticData;
 using DBRewards = Solace.DB.Models.Common.Rewards;
@@ -20,11 +21,13 @@ internal sealed class DailyGoodiesController : SolaceControllerBase
 {
     private readonly EarthDbContext _earthDB;
     private readonly StaticData.StaticData _staticData;
+    private readonly ObjectStoreClient _objectStore;
 
-    public DailyGoodiesController(EarthDbContext earthDB, StaticData.StaticData staticData)
+    public DailyGoodiesController(EarthDbContext earthDB, StaticData.StaticData staticData, ObjectStoreClient objectStore)
     {
         _earthDB = earthDB;
         _staticData = staticData;
+        _objectStore = objectStore;
     }
 
     [HttpGet("player/dailygoodies")]
@@ -86,7 +89,7 @@ internal sealed class DailyGoodiesController : SolaceControllerBase
         tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
         var results = new EarthDbContext.Results(_earthDB);
         TokensEF.Token? redeemed = await TokenUtils.RedeemTokenAsync(
-            results, accountId, token.Id, requestStartedOn, _staticData, cancellationToken);
+            results, accountId, token.Id, requestStartedOn, _staticData, _objectStore, cancellationToken);
         if (redeemed is null)
         {
             return TypedResults.BadRequest();
