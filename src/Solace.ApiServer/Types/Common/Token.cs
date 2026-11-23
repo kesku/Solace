@@ -99,6 +99,8 @@ public static class TokenTypeExtensions
             {
                 DB.Models.Player.TokensEF.Token.TypeE.LEVEL_UP => Token.Type.LEVEL_UP,
                 DB.Models.Player.TokensEF.Token.TypeE.JOURNAL_ITEM_UNLOCKED => Token.Type.JOURNAL_ITEM_UNLOCKED,
+                DB.Models.Player.TokensEF.Token.TypeE.CHALLENGE_COMPLETED => Token.Type.CHALLENGE_COMPLETED,
+                DB.Models.Player.TokensEF.Token.TypeE.CHALLENGE_PROGRESSED => Token.Type.CHALLENGE_PROGRESS,
                 _ => throw new InvalidEnumArgumentException(nameof(type), (int)type, typeof(DB.Models.Player.TokensEF.Token.TypeE)),
             };
     }

@@ -138,6 +138,7 @@ internal sealed class TappablesController : SolaceControllerBase
             ? challengeToken
             : new TokensEF.ChallengeProgressToken();
         var challengeProgress = ChallengeProgressVersion.FromToken(storedProgress);
+        var previousChallengeProgress = ChallengeProgressVersion.FromToken(storedProgress);
 
         if (redeemedTappables.IsRedeemed(tappable.Id))
         {
@@ -206,6 +207,8 @@ internal sealed class TappablesController : SolaceControllerBase
             challengeProgress.AddObjectiveProgress(requestStartedOn, "bd9d3fd7-12ef-49e0-91fa-c971795f8e35");
         }
 
+        previousChallengeProgress.EnsureDate(requestStartedOn);
+        bool challengeTokensAdded = ChallengesController.AddChallengeTokens(tokens, accountId.ToString(), previousChallengeProgress, challengeProgress, requestStartedOn);
         tokens.AddToken(ChallengesController.ProgressTokenId, challengeProgress.ToToken());
 
         redeemedTappables.Add(tappable.Id, tappable.SpawnTime + tappable.ValidFor);
@@ -213,6 +216,11 @@ internal sealed class TappablesController : SolaceControllerBase
 
         await _earthDB.SaveChangesAsync(cancellationToken);
         var results = new EarthDbContext.Results(_earthDB);
+        if (challengeTokensAdded)
+        {
+            results.Tokens = tokens.Version;
+            results.Challenges = (int)(requestStartedOn / 1000);
+        }
 
         await ActivityLogUtils.AddEntryAsync(results, accountId, new ActivityLogEF.TappableEntry(requestStartedOn, rewards.ToDBRewardsModel()));
         await rewards.ToRedeemQueryAsync(results, accountId, requestStartedOn, _staticData);

@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using Solace.ApiServer.Controllers.EarthApi;
 using Solace.DB.Models.Player;
 
 namespace Solace.ApiServer.Utils;
@@ -35,6 +36,9 @@ public sealed class ChallengeProgressVersion
         TappablesRedeemed = 0;
         ObjectiveCounts = [];
         RemovedContinuousChallengeIds = [];
+
+        // otherwise a daily challenge claimed once would never be offered again
+        ClaimedChallengeIds.RemoveWhere(ChallengesController.IsResetDaily);
     }
 
     public int RecordTappable(long timestamp)

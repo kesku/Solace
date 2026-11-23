@@ -50,6 +50,8 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
     [JsonDerivedType(typeof(JournalItemUnlockedToken), "JOURNAL_ITEM_UNLOCKED")]
     [JsonDerivedType(typeof(DailyLoginToken), "DAILY_LOGIN")]
     [JsonDerivedType(typeof(ChallengeProgressToken), "CHALLENGE_PROGRESS")]
+    [JsonDerivedType(typeof(ChallengeCompletedToken), "CHALLENGE_COMPLETED")]
+    [JsonDerivedType(typeof(ChallengeProgressedToken), "CHALLENGE_PROGRESSED")]
     public abstract class Token : IEquatable<Token>, ICloneable<Token>
     {
         [JsonIgnore]
@@ -67,7 +69,9 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
             LEVEL_UP,
             JOURNAL_ITEM_UNLOCKED,
             DAILY_LOGIN,
-            CHALLENGE_PROGRESS
+            CHALLENGE_PROGRESS,
+            CHALLENGE_COMPLETED,
+            CHALLENGE_PROGRESSED
 #pragma warning restore CA1707 // Identifiers should not contain underscores
         }
 
@@ -237,6 +241,61 @@ public sealed class TokensEF : IEntityWithId<Guid>, IVersionedEntity, IMergeable
             ClaimedChallengeIds = [.. ClaimedChallengeIds],
             RemovedContinuousChallengeIds = [.. RemovedContinuousChallengeIds]
         };
+    }
+
+    public sealed class ChallengeCompletedToken : Token
+    {
+        public string ChallengeId { get; init; }
+        public string Category { get; init; }
+        public long ExpirationTime { get; init; }
+        public Rewards Rewards { get; init; }
+
+        public ChallengeCompletedToken(string challengeId, string category, long expirationTime, Rewards rewards)
+            : base(TypeE.CHALLENGE_COMPLETED)
+        {
+            ChallengeId = challengeId;
+            Category = category;
+            ExpirationTime = expirationTime;
+            Rewards = rewards;
+        }
+
+        public override bool Equals(Token? other)
+            => other is ChallengeCompletedToken token && ChallengeId == token.ChallengeId && Category == token.Category && ExpirationTime == token.ExpirationTime && Rewards.Equals(token.Rewards);
+
+        public override int GetHashCode()
+            => HashCode.Combine(ChallengeId, Category, ExpirationTime, Rewards);
+
+        public override ChallengeCompletedToken DeepCopy()
+            => new ChallengeCompletedToken(ChallengeId, Category, ExpirationTime, Rewards.DeepCopy());
+    }
+
+    // sent to the client as "challenge.progress", named differently to not clash with ChallengeProgressToken
+    public sealed class ChallengeProgressedToken : Token
+    {
+        public string ChallengeId { get; init; }
+        public string ChallengeReferenceId { get; init; }
+        public int PreviousCount { get; init; }
+        public int CurrentCount { get; init; }
+        public int TotalThreshold { get; init; }
+
+        public ChallengeProgressedToken(string challengeId, string challengeReferenceId, int previousCount, int currentCount, int totalThreshold)
+            : base(TypeE.CHALLENGE_PROGRESSED)
+        {
+            ChallengeId = challengeId;
+            ChallengeReferenceId = challengeReferenceId;
+            PreviousCount = previousCount;
+            CurrentCount = currentCount;
+            TotalThreshold = totalThreshold;
+        }
+
+        public override bool Equals(Token? other)
+            => other is ChallengeProgressedToken token && ChallengeId == token.ChallengeId && ChallengeReferenceId == token.ChallengeReferenceId && PreviousCount == token.PreviousCount && CurrentCount == token.CurrentCount && TotalThreshold == token.TotalThreshold;
+
+        public override int GetHashCode()
+            => HashCode.Combine(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold);
+
+        public override ChallengeProgressedToken DeepCopy()
+            => new ChallengeProgressedToken(ChallengeId, ChallengeReferenceId, PreviousCount, CurrentCount, TotalThreshold);
     }
 
     public sealed class Legacy : IEquatable<Legacy>

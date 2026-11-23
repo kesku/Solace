@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Solace.Common.Utils;
+using Solace.ApiServer.Controllers.EarthApi;
 using Solace.DB;
 using Solace.DB.Models.Player;
 using Solace.DB.Utils;
@@ -82,6 +83,32 @@ public static class TokenUtils
                     {
                         updateQuery.then(new Rewards().addExperiencePoints(experiencePoints).toRedeemQuery(playerId, currentTime, staticData));
                     }*/
+                }
+
+                break;
+            case TokensEF.ChallengeCompletedToken challengeCompletedToken:
+                {
+                    // the challenge stays listed as completed until it's claimed, by redeeming this token or through modifyState
+                    if (challengeCompletedToken.ExpirationTime > currentTime)
+                    {
+                        var tokens = await results.EarthDb.Tokens
+                            .AsTracking()
+                            .FirstOrNewAsync(tokens => tokens.Id == accountId);
+                        TokensEF.ChallengeProgressToken stored = tokens.Tokens.TryGetValue(ChallengesController.ProgressTokenId, out TokensEF.Token? raw) &&
+                            raw is TokensEF.ChallengeProgressToken progressToken
+                            ? progressToken
+                            : new TokensEF.ChallengeProgressToken();
+                        var progress = ChallengeProgressVersion.FromToken(stored);
+                        progress.EnsureDate(currentTime);
+                        progress.ClaimedChallengeIds.Add(challengeCompletedToken.ChallengeId);
+                        progress.UpdatedAt = currentTime;
+                        tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
+                        await results.EarthDb.SaveChangesAsync();
+                        results.Tokens = tokens.Version;
+                        results.Challenges = (int)(currentTime / 1000);
+                    }
+
+                    await Rewards.FromDBRewardsModel(challengeCompletedToken.Rewards).ToRedeemQueryAsync(results, accountId, currentTime, staticData, objectStore);
                 }
 
                 break;

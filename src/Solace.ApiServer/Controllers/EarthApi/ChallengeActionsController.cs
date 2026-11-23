@@ -92,13 +92,22 @@ internal sealed class ChallengeActionsController : SolaceControllerBase
         tokens.AddToken(ChallengesController.ProgressTokenId, progress.ToToken());
         await _earthDb.SaveChangesAsync(cancellationToken);
 
-        var updates = new EarthApiResponse.UpdatesResponse(new EarthDbContext.Results(_earthDb));
+        // the rewards of a completed challenge are in its challenge.completed token, claiming it here redeems that token
+        var claimResults = new EarthDbContext.Results(_earthDb);
+        var claimedRewards = new RedeemRewards();
+        if (ChallengesController.GetChallengeCompletedToken(tokens, challengeId) is { } completedToken &&
+            await TokenUtils.RedeemTokenAsync(claimResults, accountId, completedToken.Id, now, _staticData, _objectStore, cancellationToken) is TokensEF.ChallengeCompletedToken redeemedToken)
+        {
+            claimedRewards = RedeemRewards.FromDBRewardsModel(redeemedToken.Rewards);
+        }
+
+        var updates = new EarthApiResponse.UpdatesResponse(claimResults);
         updates.Map["challenges"] = (int)(now / 1000);
         return EarthJson(new Dictionary<string, object?>
         {
             ["challengeId"] = challengeId,
             ["state"] = "Claimed",
-            ["rewards"] = new RedeemRewards().ToApiResponse(),
+            ["rewards"] = claimedRewards.ToApiResponse(),
             ["updates"] = new Dictionary<string, object>()
         }, updates);
     }

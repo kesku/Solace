@@ -224,11 +224,12 @@ internal sealed class ChallengesController : ControllerBase
             int currentCount = Math.Min(progress.GetObjectiveProgress(challenge.ReferenceId), threshold);
             bool isComplete = currentCount >= threshold;
             bool isClaimed = progress.ClaimedChallengeIds?.Contains(challenge.Key) == true;
-            if (isComplete || isClaimed)
+            if (isClaimed)
             {
                 continue;
             }
 
+            // completed challenges stay listed until claimed, so the client can match the challenge.completed token to them
             challenges[challenge.Key] = new ChallengeRecord(
                 challenge.ReferenceId,
                 null,
@@ -239,8 +240,8 @@ internal sealed class ChallengesController : ControllerBase
                 "Common",
                 index + 1,
                 dailyEndTime,
-                "Active",
-                false,
+                isComplete ? "Completed" : "Active",
+                isComplete,
                 currentCount * 100 / threshold,
                 currentCount,
                 threshold,
@@ -263,10 +264,6 @@ internal sealed class ChallengesController : ControllerBase
             int threshold = challenge.Threshold;
             int currentCount = Math.Min(progress.GetObjectiveProgress(challenge.ReferenceId), threshold);
             bool isComplete = currentCount >= threshold;
-            if (isComplete)
-            {
-                continue;
-            }
 
             challenges[challenge.Key] = new ChallengeRecord(
                 challenge.ReferenceId,
@@ -278,8 +275,8 @@ internal sealed class ChallengesController : ControllerBase
                 "Common",
                 index + 1,
                 dailyEndTime,
-                "Active",
-                false,
+                isComplete ? "Completed" : "Active",
+                isComplete,
                 currentCount * 100 / threshold,
                 currentCount,
                 threshold,
@@ -400,6 +397,89 @@ internal sealed class ChallengesController : ControllerBase
             tokens.RemoveToken(token.Id);
         }
     }
+
+    // challenge.completed and challenge.progress tokens, the same way Project Earth sends challenge.completed
+    // only the daily and continuous challenges can progress, nothing counts towards the season challenges
+    internal static bool AddChallengeTokens(TokensEF tokens, string playerId, ChallengeProgressVersion before, ChallengeProgressVersion after, long now)
+    {
+        long expirationTime = new DateTimeOffset(DateTimeOffset.FromUnixTimeMilliseconds(now).UtcDateTime.Date.AddDays(1), TimeSpan.Zero).ToUnixTimeMilliseconds();
+        bool added = false;
+
+        DailyChallengeDefinition[] dailyChallenges = SelectDailyChallenges(playerId, after.DailyDateUtc!);
+        foreach (DailyChallengeDefinition challenge in dailyChallenges)
+        {
+            added |= AddChallengeToken(tokens, after, challenge.Key, challenge.ReferenceId, before.GetObjectiveProgress(challenge.ReferenceId), after.GetObjectiveProgress(challenge.ReferenceId), challenge.Threshold, expirationTime, ChallengeRewards());
+        }
+
+        added |= AddChallengeToken(
+            tokens,
+            after,
+            DailyGroupId,
+            DailyReferenceId,
+            dailyChallenges.Count(challenge => before.GetObjectiveProgress(challenge.ReferenceId) >= challenge.Threshold),
+            dailyChallenges.Count(challenge => after.GetObjectiveProgress(challenge.ReferenceId) >= challenge.Threshold),
+            DailyChallengeCount,
+            expirationTime,
+            DailyGroupRewards());
+
+        foreach (DailyChallengeDefinition challenge in ContinuousChallengePool)
+        {
+            if (after.RemovedContinuousChallengeIds?.Contains(challenge.Key) == true)
+            {
+                continue;
+            }
+
+            added |= AddChallengeToken(tokens, after, challenge.Key, challenge.ReferenceId, before.GetObjectiveProgress(challenge.ReferenceId), after.GetObjectiveProgress(challenge.ReferenceId), challenge.Threshold, expirationTime, ChallengeRewards());
+        }
+
+        return added;
+    }
+
+    private static bool AddChallengeToken(TokensEF tokens, ChallengeProgressVersion progress, string challengeId, string referenceId, int previousCount, int currentCount, int threshold, long expirationTime, DBRewards rewards)
+    {
+        previousCount = Math.Min(previousCount, threshold);
+        currentCount = Math.Min(currentCount, threshold);
+        if (currentCount <= previousCount || progress.ClaimedChallengeIds?.Contains(challengeId) == true)
+        {
+            return false;
+        }
+
+        // keep a single pending progress token per challenge, counting from the last count the client was told about
+        foreach (TokensEF.TokenWithId token in tokens.GetTokens())
+        {
+            if (token.Token is TokensEF.ChallengeProgressedToken progressed && progressed.ChallengeId == challengeId)
+            {
+                previousCount = Math.Min(previousCount, progressed.PreviousCount);
+                tokens.RemoveToken(token.Id);
+            }
+        }
+
+        if (currentCount < threshold)
+        {
+            tokens.AddToken(Guid.NewGuid().ToString(), new TokensEF.ChallengeProgressedToken(challengeId, referenceId, previousCount, currentCount, threshold));
+        }
+        else if (!tokens.Tokens.Values.Any(token => token is TokensEF.ChallengeCompletedToken completed && completed.ChallengeId == challengeId))
+        {
+            tokens.AddToken(Guid.NewGuid().ToString(), new TokensEF.ChallengeCompletedToken(challengeId, "retention", expirationTime, rewards));
+        }
+
+        return true;
+    }
+
+    internal static TokensEF.TokenWithId? GetChallengeCompletedToken(TokensEF tokens, string challengeId)
+        => tokens.GetTokens().FirstOrDefault(token => token.Token is TokensEF.ChallengeCompletedToken completed && completed.ChallengeId == challengeId);
+
+    // the daily and continuous challenges reuse the same ids every day
+    internal static bool IsResetDaily(string challengeId)
+        => challengeId == DailyGroupId ||
+           DailyChallengePool.Any(challenge => challenge.Key == challengeId) ||
+           ContinuousChallengePool.Any(challenge => challenge.Key == challengeId);
+
+    private static DBRewards ChallengeRewards()
+        => new(0, 10, null, [], [], []);
+
+    private static DBRewards DailyGroupRewards()
+        => new(0, 25, null, new Dictionary<string, int?> { [CommonAdventureCrystalId] = 1 }, [], []);
 
     internal static bool TryGetDailyLoginDay(string challengeId, out int day)
     {
