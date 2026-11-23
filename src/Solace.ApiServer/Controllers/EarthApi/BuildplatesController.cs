@@ -333,13 +333,17 @@ internal sealed class BuildplatesController : SolaceControllerBase
             return TypedResults.NotFound();
         }
 
-        var buildplate = await _earthDB.PlayerBuildplates
-            .AsNoTracking()
-            .FirstOrDefaultAsync(buildplate => buildplate.Id == instanceInfo.BuildplateId && buildplate.AccountId == accountId, cancellationToken: cancellationToken);
-
-        if (buildplate is null)
+        // shared and encounter instances are not backed by one of the player's own buildplates
+        if (instanceInfo.Type is BuildplateInstancesManager.InstanceType.BUILD or BuildplateInstancesManager.InstanceType.PLAY)
         {
-            return TypedResults.NotFound();
+            var buildplate = await _earthDB.PlayerBuildplates
+                .AsNoTracking()
+                .FirstOrDefaultAsync(buildplate => buildplate.Id == instanceInfo.BuildplateId && buildplate.AccountId == accountId, cancellationToken: cancellationToken);
+
+            if (buildplate is null)
+            {
+                return TypedResults.NotFound();
+            }
         }
 
         // TODO: the client is supposed to poll until the buildplate server is ready, but instead it just crashes if we tell it that the buildplate server is not ready yet

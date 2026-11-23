@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.Text.Json;
 using Solace.ApiServer.Exceptions;
 using Solace.ApiServer.Types.Common;
 using Solace.ApiServer.Types.Tappables;
@@ -240,7 +241,8 @@ internal sealed class TappablesController : SolaceControllerBase
     [HttpPost("multiplayer/player/adventures/state")]
     public async Task<Results<ContentHttpResult, BadRequest>> EncountersState(CancellationToken cancellationToken)
     {
-        var requestedIds = await Request.Body.AsJsonAsync<Dictionary<string, object>>(cancellationToken);
+        // values deserialize as JsonElement, not string, when the target type is object
+        var requestedIds = await Request.Body.AsJsonAsync<Dictionary<string, JsonElement>>(cancellationToken);
 
         if (requestedIds is null)
         {
@@ -249,7 +251,7 @@ internal sealed class TappablesController : SolaceControllerBase
 
         foreach (var entry in requestedIds)
         {
-            if (entry.Value is not string)
+            if (entry.Value.ValueKind is not JsonValueKind.String)
             {
                 return TypedResults.BadRequest();
             }
