@@ -8,7 +8,8 @@ namespace Solace.TappablesGenerator;
 public class EncounterGenerator
 {
     // TODO: make these configurable
-    private static readonly int CHANCE_PER_TILE = 4;
+    // chance (1 in N) of an active tile spawning an encounter each spawn cycle (every 15 seconds)
+    private static readonly int CHANCE_PER_TILE = 100;
     private static readonly long MIN_DELAY = 1 * 60 * 1000;
     private static readonly long MAX_DELAY = 2 * 60 * 1000;
 
