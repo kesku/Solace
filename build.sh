@@ -114,8 +114,8 @@ if [ "${DUO_ARGS[0]:-}" = --full-inner ]; then
   python3 -I "$HERE/patch_duo_full_inner.py" "$A"
 fi
 LIFECYCLE="$A/Frameworks/SolaceScene.dylib"
-xcrun --sdk "$SDK" clang -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit \
-  -install_name @rpath/SolaceScene.dylib -o "$LIFECYCLE" "$HERE/SolaceScene.m"
+xcrun --sdk "$SDK" clang++ -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit \
+  -install_name @rpath/SolaceScene.dylib -o "$LIFECYCLE" "$HERE/SolaceScene.mm"
 
 if [ "$MODE" = device ]; then
   TEAM=$(security cms -D -i "$PROFILE" | plutil -extract TeamIdentifier.0 raw -)
