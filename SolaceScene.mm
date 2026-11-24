@@ -148,20 +148,25 @@ API_AVAILABLE(ios(27.1))
     [super viewDidLayoutSubviews];
     UIView *view = self.view;
     CGRect viewport = view.bounds;
-    CGRect safeArea = UIEdgeInsetsInsetRect(viewport, view.safeAreaInsets);
-    CGFloat top = CGRectGetMinY(viewport);
+    CGFloat rightInset = view.safeAreaInsets.right;
     for (UIViewReservedRegion *region in [view reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind]) {
         CGRect frame = CGRectIntersection(viewport, region.frame);
-        // Keep camera reservations outside the game view. All game screens
-        // render and receive touches in the same view-local coordinates.
-        if (!CGRectIsEmpty(frame) && CGRectGetMinY(frame) == CGRectGetMinY(viewport) &&
-            (CGRectGetMaxX(frame) <= CGRectGetMinX(safeArea) ||
-             CGRectGetMinX(frame) >= CGRectGetMaxX(safeArea))) {
-            top = MAX(top, CGRectGetMaxY(frame));
+        if (rightInset > 0 && !CGRectIsEmpty(frame) &&
+            CGRectGetMinY(frame) == CGRectGetMinY(viewport) &&
+            CGRectGetMinX(frame) >= CGRectGetMaxX(viewport) - rightInset) {
+            // Keep the cover camera outside the shared drawing and touch view.
+            // Preserve the full height, including the home-indicator inset.
+            viewport.size.width -= rightInset;
+#if TARGET_OS_SIMULATOR
+            if (!CGRectEqualToRect(self.gameController.view.frame, viewport)) {
+                NSLog(@"Solace cover geometry: bounds %@, insets %@, occlusion %@, viewport %@",
+                      NSStringFromCGRect(view.bounds), NSStringFromUIEdgeInsets(view.safeAreaInsets),
+                      NSStringFromCGRect(region.frame), NSStringFromCGRect(viewport));
+            }
+#endif
+            break;
         }
     }
-    viewport.size.height = CGRectGetMaxY(viewport) - top;
-    viewport.origin.y = top;
     if (!CGRectIsEmpty(viewport) && !CGRectEqualToRect(self.gameController.view.frame, viewport)) {
         self.gameController.view.frame = viewport;
     }
