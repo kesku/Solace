@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using CommandLine;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -132,13 +133,14 @@ public partial class Program
 
         builder.Services.AddCascadingAuthenticationState();
         builder.Services.AddScoped<IdentityRedirectManager>();
-        builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+        builder.Services.AddScoped<AuthenticationStateProvider, LocalAdminStateProvider>();
 
         builder.Services.AddAuthentication(options =>
             {
-                options.DefaultScheme = IdentityConstants.ApplicationScheme;
+                options.DefaultScheme = LocalAdmin.SchemeName;
                 options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
             })
+            .AddScheme<AuthenticationSchemeOptions, LocalAdminAuthHandler>(LocalAdmin.SchemeName, _ => { })
             .AddIdentityCookies();
 
         builder.Services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
