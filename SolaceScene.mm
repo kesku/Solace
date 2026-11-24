@@ -2,12 +2,8 @@
 #import <objc/runtime.h>
 #include <dlfcn.h>
 #include <mach-o/loader.h>
-#include <os/lock.h>
 #include <sys/sysctl.h>
 #include <atomic>
-#include <memory>
-#include <string>
-#include <vector>
 
 @interface UIViewController (SolaceGame)
 - (void *)getApp;
@@ -24,17 +20,8 @@ static CGSize lastSize;
 
 namespace {
 struct Vec2 { float x, y; };
-struct HudGeometry {
-    CGSize bounds;
-    UIEdgeInsets insets;
-};
-
 const uint8_t *clientImage;
 std::atomic<uint64_t> drawableSize;
-os_unfair_lock hudLock = OS_UNFAIR_LOCK_INIT;
-HudGeometry hudGeometry;
-bool coverDisplay;
-bool checkedDuoLayout;
 
 template <typename T>
 T clientAddress(size_t offset) {
@@ -50,68 +37,19 @@ float updateMapProjection(void *curve, Vec2 *projection, float zoom) {
     return clientAddress<float (*)(void *, float)>(0x27C7C38)(curve, zoom);
 }
 
-struct UIControl;
-void insetHudControl(UIControl *control, Vec2 offset) {
-    uint16_t type = *clientAddress<const uint16_t *>(0x47FBF50); // LayoutComponent type ID
-    if (!clientAddress<bool (*)(UIControl *, uint16_t)>(0x134818)(control, type)) return;
-    unsigned index = clientAddress<unsigned (*)(UIControl *, uint16_t)>(0x1347E4)(control, type);
-    auto components = *reinterpret_cast<void ***>(reinterpret_cast<uint8_t *>(control) + 0xB0);
-    void *layout = components[index];
-    auto delta = clientAddress<const Vec2 *(*)(void *)>(0x10F8A4)(layout);
-    if (delta->x != offset.x || delta->y != offset.y) {
-        clientAddress<void (*)(void *, const Vec2 *, UIControl *)>(0x10F8AC)(layout, &offset, nullptr);
-    }
-}
-
-UIControl *hudChild(UIControl *parent, const char *name) {
-    if (!parent) return nullptr;
-    auto children = clientAddress<const std::vector<std::shared_ptr<UIControl>> *(*)(UIControl *)>(0x132C8C)(parent);
-    for (const auto &child : *children) {
-        auto childName = clientAddress<const std::string *(*)(UIControl *)>(0x131008)(child.get());
-        if (*childName == name) return child.get();
-    }
-    return nullptr;
-}
-
-const Vec2 *layoutMapHud(UIControl *root, const uint8_t *screen) {
-    const Vec2 *rootSize = clientAddress<const Vec2 *(*)(UIControl *)>(0x13158C)(root);
-    // Genoa's GPS overlay bypasses the vanilla safe-zone panel. Apply UIKit's
-    // asymmetric insets to the interactive HUD controls at GUI layout time.
-    auto content = hudChild(hudChild(root, "content"), "root");
-    auto overlay = hudChild(content, "main_overlay");
-    auto subscreens = hudChild(overlay, "gps_subscreens");
-    auto topPanels = hudChild(hudChild(subscreens, "top_panel"), "top_panel");
-    if (!topPanels) return rootSize;
-
-    os_unfair_lock_lock(&hudLock);
-    HudGeometry geometry = hudGeometry;
-    os_unfair_lock_unlock(&hudLock);
-    if (geometry.bounds.width <= 0 || geometry.bounds.height <= 0) return rootSize;
-    auto uiSize = *reinterpret_cast<const Vec2 *>(screen + 0x10); // ScreenView size
-    float xScale = uiSize.x / geometry.bounds.width;
-    float y = geometry.insets.top * uiSize.y / geometry.bounds.height;
-    if (auto left = hudChild(topPanels, "top_left_stack")) {
-        insetHudControl(left, {float(geometry.insets.left * xScale), y});
-    }
-    for (const char *name : {"compass", "wallet", "crafting_notification", "smelting_notification"}) {
-        if (auto right = hudChild(topPanels, name)) {
-            insetHudControl(right, {float(-geometry.insets.right * xScale), y});
-        }
-    }
-    return rootSize;
-}
-
-API_AVAILABLE(ios(27.1))
-void installDuoLayoutHooks(UIView *view) {
+bool isIPhoneDuo() {
 #if TARGET_OS_SIMULATOR
     const char *model = getenv("SIMULATOR_MODEL_IDENTIFIER");
-    if (!model) return;
+    if (!model) return false;
 #else
     char model[32] = {};
     size_t length = sizeof(model);
-    if (sysctlbyname("hw.machine", model, &length, nullptr, 0) != 0) return;
+    if (sysctlbyname("hw.machine", model, &length, nullptr, 0) != 0) return false;
 #endif
-    if (strcmp(model, "iPhone19,4") != 0) return;
+    return strcmp(model, "iPhone19,4") == 0;
+}
+
+void installDuoProjectionHook() {
     Dl_info image;
     if (!dladdr(reinterpret_cast<const void *>(originalDrawFrame), &image)) return;
     auto header = static_cast<const mach_header_64 *>(image.dli_fbase);
@@ -129,15 +67,7 @@ void installDuoLayoutHooks(UIView *view) {
     }
     if (!clientImage) return;
     using MapHook = decltype(&updateMapProjection);
-    using HudHook = decltype(&layoutMapHud);
     *clientAddress<MapHook *>(0x4ABF3C8) = updateMapProjection;
-    *clientAddress<HudHook *>(0x4ABF3D0) = layoutMapHud;
-
-    UIHingeInteraction *hinge = [[UIHingeInteraction alloc] initWithUpdateHandler:
-        ^(UIHingeInteraction *interaction, UIHingeInteractionUpdate *update) {
-            coverDisplay = update.hinge.status == UIHingeStatusClosed;
-        }];
-    [view addInteraction:hinge];
 }
 } // namespace
 
@@ -169,34 +99,19 @@ static int gameHeight(UIViewController *controller, SEL selector) {
 API_AVAILABLE(ios(13.0))
 static void drawFrame(UIViewController *controller, SEL selector) {
     CGSize size = gamePixelSize(controller);
-    if (size.width > 0 && size.height > 0) {
-        if (@available(iOS 27.1, *)) {
-            if (!checkedDuoLayout) {
-                checkedDuoLayout = true;
-                installDuoLayoutHooks(controller.viewIfLoaded);
+    if (size.width > 0 && size.height > 0 && !CGSizeEqualToSize(size, lastSize)) {
+        if (void *app = [controller getApp]) {
+            if (clientImage) {
+                drawableSize.store((uint64_t(size.width) << 32) | uint32_t(size.height),
+                                   std::memory_order_relaxed);
             }
-        }
-        bool needsResize = !CGSizeEqualToSize(size, lastSize);
-        if (clientImage) {
-            UIView *view = controller.viewIfLoaded;
-            UIEdgeInsets insets = coverDisplay ? view.safeAreaInsets : UIEdgeInsetsZero;
-            needsResize |= hudGeometry.bounds.width <= 0 ||
-                !UIEdgeInsetsEqualToEdgeInsets(hudGeometry.insets, insets);
-            if (needsResize) {
-                drawableSize.store((uint64_t(size.width) << 32) | uint32_t(size.height), std::memory_order_relaxed);
-                os_unfair_lock_lock(&hudLock);
-                hudGeometry = {view.bounds.size, insets};
-                os_unfair_lock_unlock(&hudLock);
-            }
-        }
-        if (void *app = needsResize ? [controller getApp] : nullptr) {
             // Match the two virtual calls made by 0.33.0's -initView. They queue
             // the renderer and game layout changes on their own engine threads.
             enum { ResizeRendererSlot = 0x80 / sizeof(void *), ResizeGameSlot = 0x20 / sizeof(void *) };
             void *const *methods = *(void ***)app;
             auto resizeRenderer = reinterpret_cast<void (*)(void *, int, int)>(methods[ResizeRendererSlot]);
             auto resizeGame = reinterpret_cast<void (*)(void *, int, int, float)>(methods[ResizeGameSlot]);
-            if (!CGSizeEqualToSize(size, lastSize)) resizeRenderer(app, (int)size.width, (int)size.height);
+            resizeRenderer(app, (int)size.width, (int)size.height);
             resizeGame(app, (int)size.width, (int)size.height, 0);
             lastSize = size;
         }
@@ -211,6 +126,59 @@ static void installResizeHooks(void) {
     originalHeight = method_setImplementation(class_getInstanceMethod(game, @selector(height)), (IMP)gameHeight);
     originalDrawFrame = method_setImplementation(class_getInstanceMethod(game, @selector(drawFrame)), (IMP)drawFrame);
 }
+
+API_AVAILABLE(ios(27.1))
+@interface SolaceGameContainer : UIViewController
+@property (nonatomic, strong) UIViewController *gameController;
+@end
+
+@implementation SolaceGameContainer
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.blackColor;
+    UIViewController *game = self.gameController;
+    [self addChildViewController:game];
+    game.view.frame = self.view.bounds;
+    [self.view addSubview:game.view];
+    [game didMoveToParentViewController:self];
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    UIView *view = self.view;
+    CGRect viewport = view.bounds;
+    CGRect safeArea = UIEdgeInsetsInsetRect(viewport, view.safeAreaInsets);
+    CGFloat top = CGRectGetMinY(viewport);
+    for (UIViewReservedRegion *region in [view reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind]) {
+        CGRect frame = CGRectIntersection(viewport, region.frame);
+        // Keep camera reservations outside the game view. All game screens
+        // render and receive touches in the same view-local coordinates.
+        if (!CGRectIsEmpty(frame) && CGRectGetMinY(frame) == CGRectGetMinY(viewport) &&
+            (CGRectGetMaxX(frame) <= CGRectGetMinX(safeArea) ||
+             CGRectGetMinX(frame) >= CGRectGetMaxX(safeArea))) {
+            top = MAX(top, CGRectGetMaxY(frame));
+        }
+    }
+    viewport.size.height = CGRectGetMaxY(viewport) - top;
+    viewport.origin.y = top;
+    if (!CGRectIsEmpty(viewport) && !CGRectEqualToRect(self.gameController.view.frame, viewport)) {
+        self.gameController.view.frame = viewport;
+    }
+}
+
+- (void)viewSafeAreaInsetsDidChange {
+    [super viewSafeAreaInsetsDidChange];
+    [self.view setNeedsLayout];
+}
+
+- (UIViewController *)childViewControllerForStatusBarHidden { return self.gameController; }
+- (UIViewController *)childViewControllerForStatusBarStyle { return self.gameController; }
+- (UIViewController *)childViewControllerForHomeIndicatorAutoHidden { return self.gameController; }
+- (UIViewController *)childViewControllerForScreenEdgesDeferringSystemGestures { return self.gameController; }
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return self.gameController.supportedInterfaceOrientations; }
+
+@end
 
 API_AVAILABLE(ios(13.0))
 @interface SolaceSceneDelegate : UIResponder <UIWindowSceneDelegate>
@@ -245,6 +213,17 @@ API_AVAILABLE(ios(13.0))
     self.window.frame = windowScene.coordinateSpace.bounds;
     if (needsLaunch) {
         [gameDelegate application:app didFinishLaunchingWithOptions:nil];
+    }
+    if (@available(iOS 27.1, *)) {
+        if (isIPhoneDuo()) {
+            installDuoProjectionHook();
+            UIViewController *root = self.window.rootViewController;
+            if ([root isKindOfClass:NSClassFromString(@"minecraftpeViewControllerBase")]) {
+                SolaceGameContainer *container = [SolaceGameContainer new];
+                container.gameController = root;
+                self.window.rootViewController = container;
+            }
+        }
     }
     [self.window makeKeyAndVisible];
     [self scene:scene openURLContexts:options.URLContexts];

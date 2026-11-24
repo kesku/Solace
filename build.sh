@@ -114,7 +114,7 @@ if [ "${DUO_ARGS[0]:-}" = --full-inner ]; then
   python3 -I "$HERE/patch_duo_full_inner.py" "$A"
 fi
 LIFECYCLE="$A/Frameworks/SolaceScene.dylib"
-xcrun --sdk "$SDK" clang++ -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit \
+xcrun --sdk "$SDK" clang++ -target "$TARGET" -fobjc-arc -dynamiclib -framework UIKit -framework CoreGraphics \
   -install_name @rpath/SolaceScene.dylib -o "$LIFECYCLE" "$HERE/SolaceScene.mm"
 
 if [ "$MODE" = device ]; then

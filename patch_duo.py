@@ -16,13 +16,12 @@ FRAMEWORKS_RPATH = b"@executable_path/Frameworks\0"
 # The scene shim calls two virtual methods from this exact client build.
 CLIENT_UUID = bytes.fromhex("34c962cf17e73d379c1d584d836c7315")
 SCENE_LIBRARY = b"@executable_path/Frameworks/SolaceScene.dylib\0"
-# The 0.33.0 map and HUD call through two pointers installed by SolaceScene.
-# Reserve them immediately after __common, inside the writable segment.
+# The 0.33.0 map camera calls through a pointer installed by SolaceScene.
+# Reserve it immediately after __common, inside the writable segment.
 HOOKS_OFFSET = 0x4ABF3C8
 HOOK_STUB_OFFSET = 0x43F8000 - 0x100
 HOOK_CALLS = (
     (0x18114B4, 0x27C7C38, 0xAA1403E1),  # MapCameraControlSystem: mov x1, x20 (projection)
-    (0x2A9110, 0x13158C, 0xAA1303E1),    # ScreenView::resize: mov x1, x19 (screen)
 )
 
 
