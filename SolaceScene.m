@@ -110,38 +110,55 @@ API_AVAILABLE(ios(13.0))
 
 - (void)sceneWillEnterForeground:(UIScene *)scene {
     UIApplication *app = UIApplication.sharedApplication;
-    [app.delegate applicationWillEnterForeground:app];
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if ([delegate respondsToSelector:@selector(applicationWillEnterForeground:)]) {
+        [delegate applicationWillEnterForeground:app];
+    }
 }
 
 - (void)sceneDidBecomeActive:(UIScene *)scene {
     UIApplication *app = UIApplication.sharedApplication;
-    [app.delegate applicationDidBecomeActive:app];
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if ([delegate respondsToSelector:@selector(applicationDidBecomeActive:)]) {
+        [delegate applicationDidBecomeActive:app];
+    }
 }
 
 - (void)sceneWillResignActive:(UIScene *)scene {
     UIApplication *app = UIApplication.sharedApplication;
-    [app.delegate applicationWillResignActive:app];
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if ([delegate respondsToSelector:@selector(applicationWillResignActive:)]) {
+        [delegate applicationWillResignActive:app];
+    }
 }
 
 - (void)sceneDidEnterBackground:(UIScene *)scene {
     UIApplication *app = UIApplication.sharedApplication;
-    [app.delegate applicationDidEnterBackground:app];
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if ([delegate respondsToSelector:@selector(applicationDidEnterBackground:)]) {
+        [delegate applicationDidEnterBackground:app];
+    }
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)contexts {
     UIApplication *app = UIApplication.sharedApplication;
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if (![delegate respondsToSelector:@selector(application:openURL:options:)]) return;
     for (UIOpenURLContext *context in contexts) {
         NSMutableDictionary *options = [NSMutableDictionary dictionary];
         options[UIApplicationOpenURLOptionsSourceApplicationKey] = context.options.sourceApplication;
         options[UIApplicationOpenURLOptionsAnnotationKey] = context.options.annotation;
         options[UIApplicationOpenURLOptionsOpenInPlaceKey] = @(context.options.openInPlace);
-        [app.delegate application:app openURL:context.URL options:options];
+        [delegate application:app openURL:context.URL options:options];
     }
 }
 
 - (void)scene:(UIScene *)scene continueUserActivity:(NSUserActivity *)activity {
     UIApplication *app = UIApplication.sharedApplication;
-    [app.delegate application:app continueUserActivity:activity restorationHandler:^(NSArray *objects) {}];
+    id<UIApplicationDelegate> delegate = app.delegate;
+    if ([delegate respondsToSelector:@selector(application:continueUserActivity:restorationHandler:)]) {
+        [delegate application:app continueUserActivity:activity restorationHandler:^(NSArray *objects) {}];
+    }
 }
 
 @end
