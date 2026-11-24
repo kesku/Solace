@@ -67,60 +67,6 @@ static void installResizeHooks(void) {
     originalDrawFrame = method_setImplementation(class_getInstanceMethod(game, @selector(drawFrame)), (IMP)drawFrame);
 }
 
-API_AVAILABLE(ios(27.1))
-@interface SolaceGameContainer : UIViewController
-@property (nonatomic, strong) UIViewController *gameController;
-@end
-
-@implementation SolaceGameContainer
-
-- (void)viewDidLoad {
-    [super viewDidLoad];
-    self.view.backgroundColor = UIColor.blackColor;
-    UIViewController *game = self.gameController;
-    [self addChildViewController:game];
-    game.view.frame = self.view.bounds;
-    [self.view addSubview:game.view];
-    [game didMoveToParentViewController:self];
-}
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    UIView *view = self.view;
-    CGRect viewport = view.bounds;
-    CGRect safeArea = UIEdgeInsetsInsetRect(viewport, view.safeAreaInsets);
-    CGFloat top = CGRectGetMinY(viewport);
-    for (UIViewReservedRegion *region in [view reservedRegionsOfKind:UIViewReservedRegionKind.occlusionRegionKind]) {
-        CGRect frame = CGRectIntersection(viewport, region.frame);
-        // Genoa screens (including the map HUD) bypass the engine's safe-zone
-        // panel. Keep the drawable and its touch coordinates together below
-        // a corner reservation, while preserving the layout on notched phones.
-        if (!CGRectIsEmpty(frame) && CGRectGetMinY(frame) == CGRectGetMinY(viewport) &&
-            (CGRectGetMaxX(frame) <= CGRectGetMinX(safeArea) ||
-             CGRectGetMinX(frame) >= CGRectGetMaxX(safeArea))) {
-            top = MAX(top, CGRectGetMaxY(frame));
-        }
-    }
-    viewport.size.height = CGRectGetMaxY(viewport) - top;
-    viewport.origin.y = top;
-    if (!CGRectIsEmpty(viewport) && !CGRectEqualToRect(self.gameController.view.frame, viewport)) {
-        self.gameController.view.frame = viewport;
-    }
-}
-
-- (void)viewSafeAreaInsetsDidChange {
-    [super viewSafeAreaInsetsDidChange];
-    [self.view setNeedsLayout];
-}
-
-- (UIViewController *)childViewControllerForStatusBarHidden { return self.gameController; }
-- (UIViewController *)childViewControllerForStatusBarStyle { return self.gameController; }
-- (UIViewController *)childViewControllerForHomeIndicatorAutoHidden { return self.gameController; }
-- (UIViewController *)childViewControllerForScreenEdgesDeferringSystemGestures { return self.gameController; }
-- (UIInterfaceOrientationMask)supportedInterfaceOrientations { return self.gameController.supportedInterfaceOrientations; }
-
-@end
-
 API_AVAILABLE(ios(13.0))
 @interface SolaceSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property (nonatomic, strong) UIWindow *window;
@@ -154,14 +100,6 @@ API_AVAILABLE(ios(13.0))
     self.window.frame = windowScene.coordinateSpace.bounds;
     if (needsLaunch) {
         [gameDelegate application:app didFinishLaunchingWithOptions:nil];
-    }
-    if (@available(iOS 27.1, *)) {
-        UIViewController *root = self.window.rootViewController;
-        if ([root isKindOfClass:NSClassFromString(@"minecraftpeViewControllerBase")]) {
-            SolaceGameContainer *container = [SolaceGameContainer new];
-            container.gameController = root;
-            self.window.rootViewController = container;
-        }
     }
     [self.window makeKeyAndVisible];
     [self scene:scene openURLContexts:options.URLContexts];
